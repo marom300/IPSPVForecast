@@ -1,0 +1,224 @@
+{
+    "elements": [
+        {
+            "type": "ExpansionPanel",
+            "caption": "Location",
+            "expanded": true,
+            "items": [
+                {
+                    "type": "NumberSpinner",
+                    "name": "Latitude",
+                    "caption": "Latitude (°N)",
+                    "digits": 5,
+                    "minimum": -90,
+                    "maximum": 90,
+                    "suffix": "° N"
+                },
+                {
+                    "type": "NumberSpinner",
+                    "name": "Longitude",
+                    "caption": "Longitude (°E)",
+                    "digits": 5,
+                    "minimum": -180,
+                    "maximum": 180,
+                    "suffix": "° E"
+                },
+                {
+                    "type": "Label",
+                    "caption": "Tip: forecast.solar derives the time-zone from the coordinates. Negative azimuth means east of south (e.g. -90 = East)."
+                }
+            ]
+        },
+        {
+            "type": "ExpansionPanel",
+            "caption": "Roof surfaces",
+            "expanded": true,
+            "items": [
+                {
+                    "type": "List",
+                    "name": "Roofs",
+                    "caption": "Roofs",
+                    "rowCount": 6,
+                    "add": true,
+                    "delete": true,
+                    "sort": {
+                        "column": "Name",
+                        "direction": "ascending"
+                    },
+                    "columns": [
+                        {
+                            "name": "Name",
+                            "caption": "Name",
+                            "width": "180px",
+                            "add": "Roof",
+                            "edit": {
+                                "type": "ValidationTextBox"
+                            }
+                        },
+                        {
+                            "name": "kWp",
+                            "caption": "kWp",
+                            "width": "80px",
+                            "add": 5.0,
+                            "edit": {
+                                "type": "NumberSpinner",
+                                "digits": 3,
+                                "minimum": 0.1,
+                                "maximum": 1000
+                            }
+                        },
+                        {
+                            "name": "Declination",
+                            "caption": "Tilt (°)",
+                            "width": "80px",
+                            "add": 30,
+                            "edit": {
+                                "type": "NumberSpinner",
+                                "digits": 1,
+                                "minimum": 0,
+                                "maximum": 90,
+                                "suffix": "°"
+                            }
+                        },
+                        {
+                            "name": "Azimuth",
+                            "caption": "Azimuth (°)",
+                            "width": "110px",
+                            "add": 0,
+                            "edit": {
+                                "type": "NumberSpinner",
+                                "digits": 1,
+                                "minimum": -180,
+                                "maximum": 180,
+                                "suffix": "°"
+                            }
+                        },
+                        {
+                            "name": "DampMorning",
+                            "caption": "Damping AM",
+                            "width": "100px",
+                            "add": 0,
+                            "edit": {
+                                "type": "NumberSpinner",
+                                "digits": 2,
+                                "minimum": 0,
+                                "maximum": 1
+                            }
+                        },
+                        {
+                            "name": "DampEvening",
+                            "caption": "Damping PM",
+                            "width": "100px",
+                            "add": 0,
+                            "edit": {
+                                "type": "NumberSpinner",
+                                "digits": 2,
+                                "minimum": 0,
+                                "maximum": 1
+                            }
+                        },
+                        {
+                            "name": "Active",
+                            "caption": "Active",
+                            "width": "70px",
+                            "add": true,
+                            "edit": {
+                                "type": "CheckBox"
+                            }
+                        }
+                    ]
+                },
+                {
+                    "type": "Label",
+                    "caption": "Azimuth convention: 0 = South, -90 = East, +90 = West, ±180 = North."
+                }
+            ]
+        },
+        {
+            "type": "ExpansionPanel",
+            "caption": "Fetch settings",
+            "expanded": false,
+            "items": [
+                {
+                    "type": "NumberSpinner",
+                    "name": "UpdateInterval",
+                    "caption": "Update interval (minutes)",
+                    "minimum": 5,
+                    "maximum": 1440,
+                    "suffix": " min"
+                },
+                {
+                    "type": "PasswordTextBox",
+                    "name": "ApiKey",
+                    "caption": "API key (optional, Personal/Plus tier)"
+                },
+                {
+                    "type": "CheckBox",
+                    "name": "PerRoofVariables",
+                    "caption": "Create variables per roof"
+                },
+                {
+                    "type": "Label",
+                    "caption": "Public tier ≈ 12 requests/hour per IP. One request per active roof, per update."
+                }
+            ]
+        },
+        {
+            "type": "ExpansionPanel",
+            "caption": "Self-calibration (optional)",
+            "expanded": false,
+            "items": [
+                {
+                    "type": "CheckBox",
+                    "name": "CalibrationActive",
+                    "caption": "Enable self-calibration"
+                },
+                {
+                    "type": "SelectVariable",
+                    "name": "ActualYieldVariableID",
+                    "caption": "Actual daily yield variable (kWh)"
+                },
+                {
+                    "type": "NumberSpinner",
+                    "name": "CalibrationWindowDays",
+                    "caption": "Window (days)",
+                    "minimum": 2,
+                    "maximum": 60
+                },
+                {
+                    "type": "Label",
+                    "caption": "Correction factor is constrained to 0.5 … 1.5. Applied to today, tomorrow and day-after forecasts."
+                }
+            ]
+        }
+    ],
+    "actions": [
+        {
+            "type": "Button",
+            "caption": "Update now",
+            "onClick": "PVF_RequestAction($id, 'UpdateNow', true);"
+        },
+        {
+            "type": "Button",
+            "caption": "Test connection",
+            "onClick": "PVF_RequestAction($id, 'TestConnection', true);"
+        }
+    ],
+    "status": [
+        {
+            "code": 102,
+            "icon": "active",
+            "caption": "PV forecast active"
+        },
+        {
+            "code": 104,
+            "icon": "inactive",
+            "caption": "Instance not configured"
+        },
+        {
+            "code": 201,
+            "icon": "error",
+            "caption": "No active roofs configured"
+        }
+    ]
+}

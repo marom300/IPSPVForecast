@@ -1,0 +1,73 @@
+{
+    "translations": {
+        "de": {
+            "Location": "Standort",
+            "Latitude (°N)": "Breitengrad (°N)",
+            "Longitude (°E)": "Längengrad (°E)",
+            "Tip: forecast.solar derives the time-zone from the coordinates. Negative azimuth means east of south (e.g. -90 = East).": "Hinweis: forecast.solar leitet die Zeitzone aus den Koordinaten ab. Ein negativer Azimut bedeutet östlich von Süd (z. B. -90 = Ost).",
+
+            "Roof surfaces": "Dachflächen",
+            "Roofs": "Dachflächen",
+            "Name": "Bezeichnung",
+            "Roof": "Dach",
+            "Tilt (°)": "Neigung (°)",
+            "Azimuth (°)": "Azimut (°)",
+            "Damping AM": "Dämpfung morgens",
+            "Damping PM": "Dämpfung abends",
+            "Active": "Aktiv",
+            "Azimuth convention: 0 = South, -90 = East, +90 = West, ±180 = North.": "Azimut-Konvention: 0 = Süd, -90 = Ost, +90 = West, ±180 = Nord.",
+
+            "Fetch settings": "Abruf",
+            "Update interval (minutes)": "Update-Intervall (Minuten)",
+            "API key (optional, Personal/Plus tier)": "API-Schlüssel (optional, Personal/Plus-Tier)",
+            "Create variables per roof": "Variablen je Fläche anlegen",
+            "Public tier ≈ 12 requests/hour per IP. One request per active roof, per update.": "Public-Tier ≈ 12 Anfragen/Stunde pro IP. Ein Request pro aktiver Fläche und Update.",
+
+            "Self-calibration (optional)": "Selbstkalibrierung (optional)",
+            "Enable self-calibration": "Selbstkalibrierung aktivieren",
+            "Actual daily yield variable (kWh)": "Variable mit realem Tagesertrag (kWh)",
+            "Window (days)": "Zeitfenster (Tage)",
+            "Correction factor is constrained to 0.5 … 1.5. Applied to today, tomorrow and day-after forecasts.": "Der Korrekturfaktor ist auf 0,5 … 1,5 begrenzt und wird auf die Prognosen für heute, morgen und übermorgen angewandt.",
+
+            "Update now": "Jetzt aktualisieren",
+            "Test connection": "Verbindung testen",
+
+            "PV forecast active": "PV-Prognose aktiv",
+            "Instance not configured": "Instanz nicht konfiguriert",
+            "No active roofs configured": "Keine aktive Dachfläche konfiguriert",
+            "No active roofs configured.": "Keine aktive Dachfläche konfiguriert.",
+
+            "Forecast today": "Prognose heute",
+            "Forecast tomorrow": "Prognose morgen",
+            "Forecast day after": "Prognose übermorgen",
+            "Expected power now": "Erwartete Leistung jetzt",
+            "Remaining today": "Resttagesertrag",
+            "Last update": "Letzter Abruf",
+            "Status": "Status",
+            "Visualization": "Visualisierung",
+            "Correction factor": "Korrekturfaktor",
+            "Correction": "Korrektur",
+            "%s – today": "%s – heute",
+            "%s – tomorrow": "%s – morgen",
+
+            "OK": "OK",
+            "Error": "Fehler",
+            "Rate-limit": "Rate-Limit",
+
+            "PV forecast": "PV-Prognose",
+            "Power now": "Leistung jetzt",
+            "Today": "Heute",
+            "Tomorrow": "Morgen",
+            "Day after": "Übermorgen",
+            "Hourly profile today": "Stundenprofil heute",
+            "cached": "zwischengespeichert",
+
+            "Current correction factor: %.3f": "Aktueller Korrekturfaktor: %.3f",
+            "WARNING: %.1f requests/hour exceed the public-tier limit of 12. Increase interval or use an API key.": "WARNUNG: %.1f Anfragen/Stunde überschreiten das Public-Tier-Limit von 12. Intervall erhöhen oder API-Schlüssel verwenden.",
+            "Rate-limit exhausted (%d remaining), skipping update. Resets in %ds.": "Rate-Limit erschöpft (%d übrig), Update übersprungen. Reset in %d s.",
+            "Fetch failed for roof \"%s\": %s": "Abruf für Fläche \"%s\" fehlgeschlagen: %s",
+            "Connection OK.\nRoof: %s\nToday: %.2f kWh\nTomorrow: %.2f kWh\nRate-limit: %d/%d (period %ds)": "Verbindung OK.\nFläche: %s\nHeute: %.2f kWh\nMorgen: %.2f kWh\nRate-Limit: %d/%d (Periode %d s)",
+            "Connection failed: ": "Verbindung fehlgeschlagen: "
+        }
+    }
+}

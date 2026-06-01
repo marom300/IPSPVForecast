@@ -1,0 +1,12 @@
+{
+    "id": "{5A4F8E7D-3C2B-4A19-8F6E-1D2C3B4A5968}",
+    "author": "Community",
+    "name": "PV-Ertragsprognose (forecast.solar)",
+    "url": "https://github.com/your-user/IPS-PVForecastSolar",
+    "version": "1.0",
+    "build": 1,
+    "date": 1748736000,
+    "compatibility": {
+        "minIPS": "7.0"
+    }
+}

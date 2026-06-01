@@ -1,0 +1,17 @@
+{
+    "id": "{7B6C5D4E-3F2A-4B19-9E8D-7C6B5A4F3E2D}",
+    "name": "PVForecastSolar",
+    "type": 3,
+    "vendor": "Community",
+    "prefix": "PVF",
+    "aliases": [
+        "PV Prognose",
+        "PV Forecast",
+        "forecast.solar",
+        "Solarprognose"
+    ],
+    "url": "https://github.com/your-user/IPS-PVForecastSolar",
+    "parentRequirements": [],
+    "childRequirements": [],
+    "implemented": []
+}
