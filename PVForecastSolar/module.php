@@ -22,6 +22,16 @@ class PVForecastSolar extends IPSModuleStrict
 
     private const API_BASE = 'https://api.forecast.solar';
 
+    /**
+     * Wrapper um Translate(), der bei kaputter locale.json (Translate -> false)
+     * defensiv den englischen Ausgangstext zurückgibt. Schützt sprintf()-Aufrufe.
+     */
+    private function T(string $s): string
+    {
+        $t = $this->Translate($s);
+        return is_string($t) ? $t : $s;
+    }
+
     public function Create(): void
     {
         parent::Create();
@@ -93,7 +103,7 @@ class PVForecastSolar extends IPSModuleStrict
         }
         $form['elements'][] = [
             'type'    => 'Label',
-            'caption' => sprintf($this->Translate('Current correction factor: %.3f'), $correction),
+            'caption' => sprintf($this->T('Current correction factor: %.3f'), $correction),
         ];
 
         // Rate-Limit-Warnung: aktive Flächen × Aufrufe pro Stunde
@@ -104,7 +114,7 @@ class PVForecastSolar extends IPSModuleStrict
             $form['elements'][] = [
                 'type'    => 'Label',
                 'caption' => sprintf(
-                    $this->Translate('WARNING: %.1f requests/hour exceed the public-tier limit of 12. Increase interval or use an API key.'),
+                    $this->T('WARNING: %.1f requests/hour exceed the public-tier limit of 12. Increase interval or use an API key.'),
                     $callsPerHour
                 ),
             ];
@@ -169,7 +179,7 @@ class PVForecastSolar extends IPSModuleStrict
             if ($ratelimit['remaining'] <= 0 && $age < $period) {
                 $this->setStatusVar(self::STATUS_RATELIMIT);
                 $this->LogMessage(sprintf(
-                    $this->Translate('Rate-limit exhausted (%d remaining), skipping update. Resets in %ds.'),
+                    $this->T('Rate-limit exhausted (%d remaining), skipping update. Resets in %ds.'),
                     (int) $ratelimit['remaining'], $period - $age
                 ), KL_WARNING);
                 return;
@@ -197,7 +207,7 @@ class PVForecastSolar extends IPSModuleStrict
             } catch (Throwable $e) {
                 $this->setStatusVar(self::STATUS_ERROR);
                 $this->LogMessage(sprintf(
-                    $this->Translate('Fetch failed for roof "%s": %s'),
+                    $this->T('Fetch failed for roof "%s": %s'),
                     (string) ($roof['Name'] ?? '?'), $e->getMessage()
                 ), KL_ERROR);
                 // Letzten Cache behalten
@@ -499,7 +509,7 @@ class PVForecastSolar extends IPSModuleStrict
             $parsed = $this->parseResult($json);
             $rl = json_decode($this->GetBuffer('LastRatelimit'), true) ?: [];
             echo sprintf(
-                $this->Translate("Connection OK.\nRoof: %s\nToday: %.2f kWh\nTomorrow: %.2f kWh\nRate-limit: %d/%d (period %ds)"),
+                $this->T("Connection OK.\nRoof: %s\nToday: %.2f kWh\nTomorrow: %.2f kWh\nRate-limit: %d/%d (period %ds)"),
                 (string) ($r['Name'] ?? '?'),
                 $parsed['Today'], $parsed['Tomorrow'],
                 (int) ($rl['remaining'] ?? 0), (int) ($rl['limit'] ?? 0), (int) ($rl['period'] ?? 0)
@@ -647,10 +657,10 @@ class PVForecastSolar extends IPSModuleStrict
             }
             $name = (string) ($roof['Name'] ?? ('Roof ' . ($idx + 1)));
             $this->RegisterVariableFloat('Roof' . $idx . 'Today',
-                sprintf($this->Translate('%s – today'), $name),
+                sprintf($this->T('%s – today'), $name),
                 'PVF.kWh', 100 + $idx * 2);
             $this->RegisterVariableFloat('Roof' . $idx . 'Tomorrow',
-                sprintf($this->Translate('%s – tomorrow'), $name),
+                sprintf($this->T('%s – tomorrow'), $name),
                 'PVF.kWh', 101 + $idx * 2);
         }
     }
