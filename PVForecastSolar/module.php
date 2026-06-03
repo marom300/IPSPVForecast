@@ -164,21 +164,46 @@ class PVForecastSolar extends IPSModuleStrict
     }
 
     /**
-     * Rendert das HTML aus dem Cache neu (ohne API-Call).
-     * Nützlich nach Template-Änderungen oder wenn das Rate-Limit
-     * gerade erschöpft ist und du trotzdem die letzte Visualisierung
-     * mit dem neuen Layout sehen willst.
+     * Rendert das HTML neu (ohne API-Call).
+     * Primär aus dem Buffer-Cache (enthält auch das Stundenprofil);
+     * fällt der Buffer weg (z. B. direkt nach Modul-Update), wird aus den
+     * aktuellen Variablenwerten rekonstruiert – dann fehlt nur das
+     * Stundenprofil, die Tagesbalken sind aber da.
      */
     private function refreshVisualizationFromCache(): void
     {
         $cached = $this->getCachedResult();
         if ($cached === null) {
-            echo $this->Translate('No cached forecast available. Run "Update now" once first.');
+            $cached = $this->buildTotalsFromVariables();
+        }
+        if ($cached === null) {
+            echo $this->T('No data available yet. Run "Update now" once first.');
             return;
         }
         $html = $this->renderHTML($cached, true);
         $this->SetValue('Visualization', $html);
-        echo $this->Translate('Visualization re-rendered from cache.');
+        echo $this->T('Visualization re-rendered.');
+    }
+
+    /**
+     * Rekonstruiert ein $totals-Array aus den aktuell gespeicherten
+     * Variablenwerten (Fallback, wenn der Buffer-Cache leer ist).
+     * Liefert null, wenn die Variablen noch nicht existieren.
+     */
+    private function buildTotalsFromVariables(): ?array
+    {
+        $idToday = @$this->GetIDForIdent('Today');
+        if (!$idToday) {
+            return null;
+        }
+        return [
+            'Today'          => (float) GetValue($idToday),
+            'Tomorrow'       => (float) @GetValue($this->GetIDForIdent('Tomorrow')),
+            'DayAfter'       => (float) @GetValue($this->GetIDForIdent('DayAfter')),
+            'PowerNow'       => (float) @GetValue($this->GetIDForIdent('PowerNow')),
+            'RemainingToday' => (float) @GetValue($this->GetIDForIdent('RemainingToday')),
+            'HourlySum'      => [], // im Variablen-Fallback nicht verfügbar
+        ];
     }
 
     /**
@@ -228,11 +253,17 @@ class PVForecastSolar extends IPSModuleStrict
                 $perRoofResults[$idx] = $this->parseResult($json);
                 $perRoofResults[$idx]['Name'] = $roof['Name'] ?? ('Roof ' . ($idx + 1));
             } catch (Throwable $e) {
-                $this->setStatusVar(self::STATUS_ERROR);
+                // Eine 429-Antwort (oder remaining<=0 im Buffer) ist KEIN echter
+                // Fehler, sondern Rate-Limit – das sauseinanderhalten.
+                $rl = json_decode($this->GetBuffer('LastRatelimit'), true);
+                $isRateLimit = (strpos($e->getMessage(), '429') !== false)
+                    || (is_array($rl) && (int) ($rl['remaining'] ?? 1) <= 0);
+
+                $this->setStatusVar($isRateLimit ? self::STATUS_RATELIMIT : self::STATUS_ERROR);
                 $this->LogMessage(sprintf(
                     $this->T('Fetch failed for roof "%s": %s'),
                     (string) ($roof['Name'] ?? '?'), $e->getMessage()
-                ), KL_ERROR);
+                ), $isRateLimit ? KL_WARNING : KL_ERROR);
                 // Letzten Cache behalten
                 $cached = $this->getCachedResult();
                 if ($cached !== null) {
