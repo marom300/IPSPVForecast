@@ -127,6 +127,30 @@ class PVForecastSolar extends IPSModuleStrict
         switch ($Ident) {
             case 'UpdateNow':
                 $this->UpdateForecast();
+                // Feedback ans Formular geben, sonst weiß der Nutzer nicht, was passiert ist
+                $status = (int) @GetValue($this->GetIDForIdent('Status'));
+                $cachedAvailable = $this->getCachedResult() !== null;
+                switch ($status) {
+                    case self::STATUS_OK:
+                        echo $this->T('Update OK – variables refreshed.');
+                        break;
+                    case self::STATUS_RATELIMIT:
+                        $rl = json_decode($this->GetBuffer('LastRatelimit'), true) ?: [];
+                        $age = time() - (int) ($rl['ts'] ?? time());
+                        $reset = max(0, (int) ($rl['period'] ?? 3600) - $age);
+                        echo sprintf(
+                            $this->T('Rate-limit exhausted. Resets in %d s. Cache available: %s.'),
+                            $reset, $cachedAvailable ? $this->T('yes') : $this->T('no')
+                        );
+                        break;
+                    case self::STATUS_ERROR:
+                    default:
+                        echo sprintf(
+                            $this->T("Update failed – see IPS messages log for details. Cache available: %s."),
+                            $cachedAvailable ? $this->T('yes') : $this->T('no')
+                        );
+                        break;
+                }
                 break;
             case 'TestConnection':
                 $this->testConnection();
