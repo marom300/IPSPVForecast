@@ -53,11 +53,10 @@ class PVForecastSolar extends IPSModuleStrict
         $this->RegisterPropertyInteger('ActualYieldVariableID', 0);
         $this->RegisterPropertyInteger('CalibrationWindowDays', 10);
 
-        // Buffer
-        $this->SetBuffer('LastResult', '');
-        $this->SetBuffer('LastRatelimit', '');
-        $this->SetBuffer('History', '[]');
-        $this->SetBuffer('Correction', '1.0');
+        // Buffer NICHT in Create() leeren! Create() läuft bei jedem Modul-Reload
+        // (z. B. nach Update aus dem Store), das würde den Cache jedes Mal wegwerfen.
+        // GetBuffer liefert für nie gesetzte Buffer ohnehin '' zurück – wir behandeln
+        // das in getCachedResult() / updateCalibration() / GetConfigurationForm() defensiv.
 
         // Timer (Callback: public method UpdateForecast)
         $this->RegisterTimer('UpdateTimer', 0, 'PVF_UpdateForecast($_IPS[\'TARGET\']);');
