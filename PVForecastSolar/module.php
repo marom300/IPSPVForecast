@@ -649,39 +649,44 @@ class PVForecastSolar extends IPSModuleStrict
 
         $max = max($today, $tomorrow, $dayAfter, 0.01);
 
+        // Fluid Font-Größen: clamp(min, ideal, max) – ideal skaliert mit Viewport-Breite
+        // Tagesbalken
         $bar = function (string $label, float $kwh, float $max): string {
             $pct = max(2, (int) round(($kwh / $max) * 100));
             $lbl = htmlspecialchars($label, ENT_QUOTES);
             return <<<HTML
-<div style="margin:6px 0;">
-  <div style="display:flex;justify-content:space-between;font-size:12px;color:#cfd6e0;">
+<div style="margin:0.45em 0;">
+  <div style="display:flex;justify-content:space-between;font-size:clamp(11px,1.4vw,13px);color:#cfd6e0;margin-bottom:3px;">
     <span>{$lbl}</span><span>{$kwh} kWh</span>
   </div>
-  <div style="background:rgba(255,255,255,0.08);height:10px;border-radius:5px;overflow:hidden;">
+  <div style="background:rgba(255,255,255,0.08);height:clamp(8px,1.2vw,14px);border-radius:999px;overflow:hidden;">
     <div style="width:{$pct}%;height:100%;background:linear-gradient(90deg,#f7b500,#ff7a00);"></div>
   </div>
 </div>
 HTML;
         };
 
-        // Stündliches Profil
+        // Stündliches Profil – Bars als flex:1, füllen die volle verfügbare Breite
         $hourlyHtml = '';
         if (!empty($totals['HourlySum']) && is_array($totals['HourlySum'])) {
             $vals = array_values($totals['HourlySum']);
             $hmax = max($vals) ?: 1.0;
             $bars = '';
             foreach ($totals['HourlySum'] as $ts => $wh) {
-                $h = (int) round(($wh / $hmax) * 50);
-                $hour = date('H', strtotime((string) $ts));
+                $pct = (int) round(($wh / $hmax) * 100);
                 $title = sprintf('%s: %.0f Wh', (string) $ts, (float) $wh);
+                // flex:1 → Bars verteilen sich auf die volle Breite.
+                // height via aspect-irrelevant: nutzen feste Container-Höhe + prozentuale Bar-Höhe.
                 $bars .= '<div title="' . htmlspecialchars($title, ENT_QUOTES) . '" '
-                       . 'style="display:inline-block;width:8px;margin:0 1px;vertical-align:bottom;'
-                       . 'background:linear-gradient(180deg,#f7b500,#ff7a00);height:' . max(1, $h) . 'px;"></div>';
+                       . 'style="flex:1 1 0;min-width:3px;max-width:22px;margin:0 1px;'
+                       . 'align-self:flex-end;height:' . max(2, $pct) . '%;'
+                       . 'background:linear-gradient(180deg,#f7b500,#ff7a00);border-radius:2px 2px 0 0;"></div>';
             }
-            $hourlyHtml = '<div style="margin-top:14px;">'
-                . '<div style="font-size:12px;color:#cfd6e0;margin-bottom:4px;">'
+            $hourlyHtml = '<div style="margin-top:0.9em;">'
+                . '<div style="font-size:clamp(11px,1.4vw,13px);color:#cfd6e0;margin-bottom:4px;">'
                 . $this->Translate('Hourly profile today') . '</div>'
-                . '<div style="background:rgba(255,255,255,0.04);padding:6px;border-radius:6px;white-space:nowrap;overflow-x:auto;">'
+                . '<div style="background:rgba(255,255,255,0.04);padding:6px;border-radius:8px;'
+                . 'display:flex;align-items:flex-end;height:clamp(50px,9vw,110px);">'
                 . $bars . '</div></div>';
         }
 
@@ -691,24 +696,30 @@ HTML;
         $last = date('Y-m-d H:i');
         $staleNote = $stale ? '<span style="color:#ffb86b;">&nbsp;(' . $this->Translate('cached') . ')</span>' : '';
         $corrLine = ($corr !== null)
-            ? '<span style="margin-left:10px;">' . $this->Translate('Correction') . ': ' . number_format($corr, 3) . '</span>'
+            ? '<span style="margin-left:10px;white-space:nowrap;">' . $this->Translate('Correction') . ': ' . number_format($corr, 3) . '</span>'
             : '';
 
         return <<<HTML
-<div style="font-family:'Segoe UI',Tahoma,sans-serif;color:#e9edf3;padding:12px 14px;border-radius:10px;
-            background:linear-gradient(135deg,rgba(20,28,40,0.85),rgba(10,14,22,0.85));max-width:520px;">
-  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
-    <div style="font-size:16px;font-weight:600;">☀ {$this->Translate('PV forecast')}</div>
-    <div style="font-size:11px;color:#9aa6b3;">{$loc} · {$last}{$staleNote}{$corrLine}</div>
-  </div>
-  <div style="display:flex;gap:14px;margin-bottom:8px;">
-    <div style="flex:1;text-align:center;">
-      <div style="font-size:11px;color:#9aa6b3;">{$this->Translate('Power now')}</div>
-      <div style="font-size:18px;font-weight:600;">{$power} W</div>
+<div style="font-family:'Segoe UI',Tahoma,sans-serif;color:#e9edf3;
+            padding:clamp(10px,1.2vw,16px) clamp(12px,1.4vw,20px);
+            border-radius:12px;
+            background:linear-gradient(135deg,rgba(20,28,40,0.85),rgba(10,14,22,0.85));
+            width:100%;box-sizing:border-box;">
+  <div style="display:flex;flex-wrap:wrap;align-items:baseline;justify-content:space-between;
+              gap:6px 14px;margin-bottom:10px;">
+    <div style="font-size:clamp(15px,1.8vw,20px);font-weight:600;">☀ {$this->Translate('PV forecast')}</div>
+    <div style="font-size:clamp(10px,1.1vw,13px);color:#9aa6b3;">
+      {$loc} · {$last}{$staleNote}{$corrLine}
     </div>
-    <div style="flex:1;text-align:center;">
-      <div style="font-size:11px;color:#9aa6b3;">{$this->Translate('Remaining today')}</div>
-      <div style="font-size:18px;font-weight:600;">{$remain} kWh</div>
+  </div>
+  <div style="display:flex;flex-wrap:wrap;gap:10px 18px;margin-bottom:8px;">
+    <div style="flex:1 1 130px;text-align:center;">
+      <div style="font-size:clamp(10px,1.1vw,13px);color:#9aa6b3;">{$this->Translate('Power now')}</div>
+      <div style="font-size:clamp(17px,2.3vw,26px);font-weight:600;">{$power} W</div>
+    </div>
+    <div style="flex:1 1 130px;text-align:center;">
+      <div style="font-size:clamp(10px,1.1vw,13px);color:#9aa6b3;">{$this->Translate('Remaining today')}</div>
+      <div style="font-size:clamp(17px,2.3vw,26px);font-weight:600;">{$remain} kWh</div>
     </div>
   </div>
   {$bar($this->Translate('Today'),         round($today, 2), $max)}
