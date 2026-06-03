@@ -196,12 +196,12 @@
         {
             "type": "Button",
             "caption": "Update now",
-            "onClick": "PVF_RequestAction($id, 'UpdateNow', true);"
+            "onClick": "IPS_RequestAction($id, 'UpdateNow', true);"
         },
         {
             "type": "Button",
             "caption": "Test connection",
-            "onClick": "PVF_RequestAction($id, 'TestConnection', true);"
+            "onClick": "IPS_RequestAction($id, 'TestConnection', true);"
         }
     ],
     "status": [
