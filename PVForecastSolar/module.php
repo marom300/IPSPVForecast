@@ -122,9 +122,30 @@ class PVForecastSolar extends IPSModuleStrict
             case 'TestConnection':
                 $this->testConnection();
                 break;
+            case 'RefreshVisualization':
+                $this->refreshVisualizationFromCache();
+                break;
             default:
                 throw new Exception("Invalid Ident: $Ident");
         }
+    }
+
+    /**
+     * Rendert das HTML aus dem Cache neu (ohne API-Call).
+     * Nützlich nach Template-Änderungen oder wenn das Rate-Limit
+     * gerade erschöpft ist und du trotzdem die letzte Visualisierung
+     * mit dem neuen Layout sehen willst.
+     */
+    private function refreshVisualizationFromCache(): void
+    {
+        $cached = $this->getCachedResult();
+        if ($cached === null) {
+            echo $this->Translate('No cached forecast available. Run "Update now" once first.');
+            return;
+        }
+        $html = $this->renderHTML($cached, true);
+        $this->SetValue('Visualization', $html);
+        echo $this->Translate('Visualization re-rendered from cache.');
     }
 
     /**

@@ -202,6 +202,11 @@
             "type": "Button",
             "caption": "Test connection",
             "onClick": "IPS_RequestAction($id, 'TestConnection', true);"
+        },
+        {
+            "type": "Button",
+            "caption": "Re-render visualization (no API call)",
+            "onClick": "IPS_RequestAction($id, 'RefreshVisualization', true);"
         }
     ],
     "status": [

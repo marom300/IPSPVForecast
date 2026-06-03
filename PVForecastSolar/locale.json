@@ -31,6 +31,9 @@
 
             "Update now": "Jetzt aktualisieren",
             "Test connection": "Verbindung testen",
+            "Re-render visualization (no API call)": "Visualisierung neu rendern (ohne API-Call)",
+            "No cached forecast available. Run \"Update now\" once first.": "Kein Cache vorhanden. Bitte zuerst einmal „Jetzt aktualisieren" ausführen.",
+            "Visualization re-rendered from cache.": "Visualisierung aus Cache neu gerendert.",
 
             "PV forecast active": "PV-Prognose aktiv",
             "Instance not configured": "Instanz nicht konfiguriert",
