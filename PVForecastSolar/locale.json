@@ -21,10 +21,14 @@
             "Update interval (minutes)": "Update-Intervall (Minuten)",
             "API key (optional, Personal/Plus tier)": "API-Schlüssel (optional, Personal/Plus-Tier)",
             "Create variables per roof": "Variablen je Fläche anlegen",
-            "Write forecast curve to archive (for charts)": "Prognose-Kurve ins Archiv schreiben (für Diagramme)",
-            "The forecast curve is logged into the variable \"Forecast curve (kWh/h)\" with future timestamps. Add it as a line to a chart next to your actual generation.": "Die Prognose-Kurve wird mit zukünftigen Zeitstempeln in die Variable \"Prognose-Kurve (kWh/h)\" geloggt. Füge sie als Linie in ein Diagramm neben deiner realen Erzeugung ein.",
-            "Forecast curve (kWh/h)": "Prognose-Kurve (kWh/h)",
             "Public tier ≈ 12 requests/hour per IP. One request per active roof, per update.": "Public-Tier ≈ 12 Anfragen/Stunde pro IP. Ein Request pro aktiver Fläche und Update.",
+
+            "Chart overlay (optional)": "Diagramm-Overlay (optional)",
+            "Actual PV power variable (W)": "Variable mit realer PV-Leistung (W)",
+            "If set, the visualization shows a chart overlaying today's actual generation (bars) with the forecast (dashed line), like a HomeAssistant chart. Use the instantaneous total PV power in watts (logged). The variable must be archived.": "Wenn gesetzt, zeigt die Visualisierung ein Diagramm, das die heutige reale Erzeugung (Balken) mit der Prognose (gestrichelte Linie) überlagert – wie ein HomeAssistant-Chart. Verwende die momentane Gesamt-PV-Leistung in Watt (geloggt). Die Variable muss archiviert sein.",
+            "Today: forecast vs. actual": "Heute: Prognose vs. Ist",
+            "Actual": "Ist",
+            "Forecast": "Prognose",
 
             "Self-calibration (optional)": "Selbstkalibrierung (optional)",
             "Enable self-calibration": "Selbstkalibrierung aktivieren",

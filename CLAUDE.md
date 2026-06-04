@@ -70,7 +70,7 @@ Veröffentlichungsreifes Community-Modul für IP-Symcon (≥ 7.0, PHP 8.x) das v
 | `CalibrationActive` | bool | false | Selbstkalibrierung an |
 | `ActualYieldVariableID` | int | 0 | Variable mit realem Tagesertrag (kWh) |
 | `CalibrationWindowDays` | int | 10 | Tage für Korrekturfaktor-Berechnung |
-| `WriteForecastCurve` | bool | false | Prognose-Kurve (kWh/h) ins Archiv schreiben (für Charts) |
+| `ActualPowerVariableID` | int | 0 | Variable mit realer PV-Leistung (W) für Overlay-Diagramm |
 
 Buffer (`SetBuffer`):
 - `LastResult` – letztes vollständiges Ergebnis (JSON)
@@ -87,11 +87,12 @@ Summen (immer):
 - `RemainingToday` (kWh)
 - `LastUpdate` (String/Unix)
 - `Status` (Int + Profil OK/Error/Ratelimit)
-- `Visualization` (~HTMLBox)
+- `Visualization` (~HTMLBox) – inkl. optionalem Overlay-SVG (Prognose-Linie vs. Ist-Balken), wenn `ActualPowerVariableID` gesetzt
 - `Correction` (Float, optional)
-- `ForecastEnergy` (kWh/h, geloggt, optional) – Prognose-Kurve mit Zukunfts-Zeitstempeln via `AC_AddLoggedValues` für Diagramme
 
 Je Fläche (wenn aktiv): `Roof{Index}Today`, `Roof{Index}Tomorrow`
+
+> Hinweis: Eine Prognose-Kurve im **nativen IPS-Archiv** ist nicht möglich – `AC_AddLoggedValues` lehnt Zukunfts-Zeitstempel ab. Das Overlay wird daher direkt als SVG in der HTML-Box gezeichnet (`renderOverlayChart`); die Ist-Werte kommen via `AC_GetAggregatedValues` (stündlich) aus der konfigurierten Leistungsvariable.
 
 ## Profile
 

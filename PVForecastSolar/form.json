@@ -158,15 +158,6 @@
                     "caption": "Create variables per roof"
                 },
                 {
-                    "type": "CheckBox",
-                    "name": "WriteForecastCurve",
-                    "caption": "Write forecast curve to archive (for charts)"
-                },
-                {
-                    "type": "Label",
-                    "caption": "The forecast curve is logged into the variable \"Forecast curve (kWh/h)\" with future timestamps. Add it as a line to a chart next to your actual generation."
-                },
-                {
                     "type": "Label",
                     "caption": "Public tier ≈ 12 requests/hour per IP. One request per active roof, per update."
                 }
@@ -197,6 +188,22 @@
                 {
                     "type": "Label",
                     "caption": "Correction factor is constrained to 0.5 … 1.5. Applied to today, tomorrow and day-after forecasts."
+                }
+            ]
+        },
+        {
+            "type": "ExpansionPanel",
+            "caption": "Chart overlay (optional)",
+            "expanded": false,
+            "items": [
+                {
+                    "type": "SelectVariable",
+                    "name": "ActualPowerVariableID",
+                    "caption": "Actual PV power variable (W)"
+                },
+                {
+                    "type": "Label",
+                    "caption": "If set, the visualization shows a chart overlaying today's actual generation (bars) with the forecast (dashed line), like a HomeAssistant chart. Use the instantaneous total PV power in watts (logged). The variable must be archived."
                 }
             ]
         }

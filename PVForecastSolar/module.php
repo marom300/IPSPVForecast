@@ -53,8 +53,8 @@ class PVForecastSolar extends IPSModuleStrict
         $this->RegisterPropertyInteger('ActualYieldVariableID', 0);
         $this->RegisterPropertyInteger('CalibrationWindowDays', 10);
 
-        // Prognose-Kurve ins Archiv schreiben (für Charts: Forecast-Linie)
-        $this->RegisterPropertyBoolean('WriteForecastCurve', false);
+        // Reale PV-Leistung (W) für das Overlay-Diagramm (Prognose vs. Ist)
+        $this->RegisterPropertyInteger('ActualPowerVariableID', 0);
 
         // Buffer NICHT in Create() leeren! Create() läuft bei jedem Modul-Reload
         // (z. B. nach Update aus dem Store), das würde den Cache jedes Mal wegwerfen.
@@ -85,11 +85,11 @@ class PVForecastSolar extends IPSModuleStrict
             $this->UnregisterVariable('Correction');
         }
 
-        // Prognose-Kurve-Variable nur wenn aktiviert (geloggt, für Charts)
-        if ($this->ReadPropertyBoolean('WriteForecastCurve')) {
-            $this->RegisterVariableFloat('ForecastEnergy', $this->T('Forecast curve (kWh/h)'), 'PVF.kWh', 45);
-            $this->enableLogging('ForecastEnergy', 0); // 0 = Standard-Aggregation
-        } elseif (@$this->GetIDForIdent('ForecastEnergy')) {
+        // Hinweis: Eine Prognose-Kurve im NATIVEN IPS-Archiv ist nicht möglich –
+        // AC_AddLoggedValues akzeptiert keine Zukunfts-Zeitstempel. Stattdessen
+        // wird die Prognose-vs-Ist-Kurve direkt in der HTML-Box gezeichnet
+        // (siehe ActualPowerVariableID / renderOverlayChart). Altvariable aufräumen:
+        if (@$this->GetIDForIdent('ForecastEnergy')) {
             $this->UnregisterVariable('ForecastEnergy');
         }
 
@@ -311,12 +311,6 @@ class PVForecastSolar extends IPSModuleStrict
 
         $this->setCachedResult($totals);
         $this->renderAndWrite($totals, false);
-
-        // Prognose-Kurve ins Archiv schreiben (optional, für Charts)
-        if ($this->ReadPropertyBoolean('WriteForecastCurve')) {
-            $this->writeForecastCurve($totals['PeriodsSum'] ?? []);
-        }
-
         $this->setStatusVar(self::STATUS_OK);
     }
 
@@ -736,64 +730,43 @@ class PVForecastSolar extends IPSModuleStrict
     }
 
     /**
-     * Schreibt die Prognose-Energiekurve (Wh je Periode) mit ihren echten –
-     * teils zukünftigen – Zeitstempeln ins Archiv der Variable ForecastEnergy.
-     * Dadurch kann sie als Linie in einem WebFront-/Diagramm-Chart neben der
-     * real geloggten Erzeugung dargestellt werden.
+     * Liest die reale Erzeugung von heute aus dem Archiv (stündlich aggregiert)
+     * und liefert kWh je Stunde des Tages [0..23].
      *
-     * @param array $periodsSumWh [timestamp-string => Wh]
+     * Erwartet eine Variable mit MOMENTANER PV-Leistung in W (Standard-Logging).
+     * Energie/Stunde = Mittelwert(W) × Dauer(h) / 1000.
      */
-    private function writeForecastCurve(array $periodsSumWh): void
+    private function getActualHourlyKWh(): array
     {
+        $vid = $this->ReadPropertyInteger('ActualPowerVariableID');
+        if ($vid <= 0 || !IPS_VariableExists($vid)) {
+            return [];
+        }
         $aid = $this->getArchiveID();
-        $vid = @$this->GetIDForIdent('ForecastEnergy');
-        if (!$aid || !$vid || empty($periodsSumWh) || !function_exists('AC_AddLoggedValues')) {
-            return;
+        if (!$aid || !function_exists('AC_GetAggregatedValues')) {
+            return [];
         }
 
+        $startOfDay = (int) strtotime('today 00:00:00');
         $now = time();
-        $rows = [];
-        $currentKWh = 0.0;
-        $bestT = -1;
-        foreach ($periodsSumWh as $ts => $wh) {
-            $t = strtotime((string) $ts);
-            if ($t === false) {
+        // Aggregationsstufe 0 = stündlich
+        $rows = @AC_GetAggregatedValues($aid, $vid, 0, $startOfDay, $now, 0);
+        if (!is_array($rows)) {
+            return [];
+        }
+
+        $byHour = [];
+        foreach ($rows as $r) {
+            $ts = (int) ($r['TimeStamp'] ?? 0);
+            if ($ts < $startOfDay) {
                 continue;
             }
-            $kwh = (float) $wh / 1000.0; // Wh -> kWh
-            // WICHTIG: AC_AddLoggedValues akzeptiert NUR 'TimeStamp' und 'Value'.
-            // Ein 'Duration'-Feld führt zu "Value contains invalid fields".
-            $rows[] = ['TimeStamp' => $t, 'Value' => $kwh];
-            // Wert der aktuell laufenden Periode (für die Anzeige im Objektbaum)
-            if ($t <= $now && $t > $bestT) {
-                $bestT = $t;
-                $currentKWh = $kwh;
-            }
+            $h = (int) date('G', $ts);
+            $avgW = (float) ($r['Avg'] ?? 0);
+            $durH = ((float) ($r['Duration'] ?? 3600)) / 3600.0;
+            $byHour[$h] = ($byHour[$h] ?? 0.0) + ($avgW * $durH / 1000.0);
         }
-        if (empty($rows)) {
-            return;
-        }
-
-        usort($rows, fn($a, $b) => $a['TimeStamp'] <=> $b['TimeStamp']);
-        $start = (int) $rows[0]['TimeStamp'];
-        $end   = (int) $rows[count($rows) - 1]['TimeStamp'];
-
-        // Aktuellen Wert setzen -> Objektbaum zeigt einen Wert + Zeitstempel
-        $this->SetValue('ForecastEnergy', $currentKWh);
-
-        // Archiv-Schreiben mit echter Fehlermeldung (kein @-Suppressing), damit
-        // wir sehen, falls IPS Zukunfts-Zeitstempel ablehnt o. Ä.
-        try {
-            AC_DeleteVariableData($aid, $vid, $start, $end);
-            AC_AddLoggedValues($aid, $vid, $rows);
-            AC_ReAggregateVariable($aid, $vid);
-            $this->LogMessage(sprintf(
-                'ForecastCurve: %d Punkte ins Archiv geschrieben (%s .. %s).',
-                count($rows), date('Y-m-d H:i', $start), date('Y-m-d H:i', $end)
-            ), KL_NOTIFY);
-        } catch (Throwable $e) {
-            $this->LogMessage('ForecastCurve-Archiv fehlgeschlagen: ' . $e->getMessage(), KL_ERROR);
-        }
+        return $byHour;
     }
 
     private function registerPerRoofVariables(): void
@@ -834,6 +807,126 @@ class PVForecastSolar extends IPSModuleStrict
     // HTML rendering
     // ---------------------------------------------------------------
 
+    /**
+     * Zeichnet ein selbst gerendertes SVG-Diagramm „Prognose vs. Ist" für heute:
+     * Balken = reale Erzeugung (kWh/h), gestrichelte Linie = Prognose (kWh/h).
+     * SVG skaliert über viewBox automatisch auf jede Kachelbreite.
+     *
+     * @param array $forecastByHour [hour 0..23 => kWh]
+     * @param array $actualByHour   [hour 0..23 => kWh]
+     */
+    private function renderOverlayChart(array $forecastByHour, array $actualByHour): string
+    {
+        $hours = array_unique(array_merge(array_keys($forecastByHour), array_keys($actualByHour)));
+        if (empty($hours)) {
+            return '';
+        }
+        sort($hours);
+        $minH = (int) min($hours);
+        $maxH = (int) max($hours);
+        if ($maxH - $minH < 4) {
+            $maxH = min(23, $minH + 4);
+        }
+        $n = $maxH - $minH + 1;
+
+        $allVals = array_merge([0.1], array_values($forecastByHour), array_values($actualByHour));
+        $maxVal = ceil(max($allVals) * 10) / 10;
+        if ($maxVal <= 0) {
+            $maxVal = 0.1;
+        }
+
+        // viewBox-Koordinaten (skalieren später auf 100% Breite)
+        $W = 1000; $H = 340;
+        $L = 46; $R = 992; $T = 14; $B = 300;
+        $plotH = $B - $T;
+        $slotW = ($R - $L) / $n;
+
+        $xCenter = fn($h) => $L + $slotW * (($h - $minH) + 0.5);
+        $yVal    = fn($v) => $B - ($v / $maxVal) * $plotH;
+        $r1 = fn($x) => round($x, 1);
+
+        $svg = '<svg viewBox="0 0 ' . $W . ' ' . $H . '" preserveAspectRatio="xMidYMid meet" '
+             . 'style="width:100%;height:auto;display:block;font-family:\'Segoe UI\',Tahoma,sans-serif;">';
+
+        // Gridlines + Y-Beschriftung (0 / halb / max)
+        foreach ([0.0, $maxVal / 2, $maxVal] as $gv) {
+            $y = $yVal($gv);
+            $svg .= '<line x1="' . $L . '" y1="' . $r1($y) . '" x2="' . $R . '" y2="' . $r1($y)
+                  . '" stroke="rgba(255,255,255,0.10)" stroke-width="1"/>';
+            $svg .= '<text x="' . ($L - 6) . '" y="' . $r1($y + 4) . '" text-anchor="end" '
+                  . 'font-size="16" fill="#9aa6b3">' . number_format($gv, 1) . '</text>';
+        }
+
+        // Ist-Balken
+        $barW = $slotW * 0.62;
+        foreach ($actualByHour as $h => $v) {
+            if ($h < $minH || $h > $maxH || $v <= 0) {
+                continue;
+            }
+            $x = $xCenter($h) - $barW / 2;
+            $y = $yVal($v);
+            $svg .= '<rect x="' . $r1($x) . '" y="' . $r1($y) . '" width="' . $r1($barW)
+                  . '" height="' . $r1($B - $y) . '" rx="3" fill="#f7a000" opacity="0.85">'
+                  . '<title>' . $h . ':00 ' . htmlspecialchars($this->T('Actual'), ENT_QUOTES)
+                  . ': ' . number_format($v, 2) . ' kWh</title></rect>';
+        }
+
+        // „Jetzt"-Markierung
+        $nowH = (float) date('G') + (float) date('i') / 60.0;
+        if ($nowH >= $minH && $nowH <= $maxH + 1) {
+            $xn = $L + $slotW * ($nowH - $minH);
+            $svg .= '<line x1="' . $r1($xn) . '" y1="' . $T . '" x2="' . $r1($xn) . '" y2="' . $B
+                  . '" stroke="rgba(255,255,255,0.28)" stroke-width="1" stroke-dasharray="2 3"/>';
+        }
+
+        // Prognose-Linie (gestrichelt) + Punkte
+        $pts = [];
+        for ($h = $minH; $h <= $maxH; $h++) {
+            if (!isset($forecastByHour[$h])) {
+                continue;
+            }
+            $pts[] = $r1($xCenter($h)) . ',' . $r1($yVal($forecastByHour[$h]));
+        }
+        if (count($pts) >= 2) {
+            $svg .= '<polyline points="' . implode(' ', $pts) . '" fill="none" stroke="#ffd27a" '
+                  . 'stroke-width="3" stroke-dasharray="7 5" stroke-linejoin="round" stroke-linecap="round"/>';
+        }
+        for ($h = $minH; $h <= $maxH; $h++) {
+            if (!isset($forecastByHour[$h])) {
+                continue;
+            }
+            $svg .= '<circle cx="' . $r1($xCenter($h)) . '" cy="' . $r1($yVal($forecastByHour[$h]))
+                  . '" r="3" fill="#ffd27a"><title>' . $h . ':00 '
+                  . htmlspecialchars($this->T('Forecast'), ENT_QUOTES)
+                  . ': ' . number_format($forecastByHour[$h], 2) . ' kWh</title></circle>';
+        }
+
+        // X-Beschriftung (alle 2 Stunden)
+        for ($h = $minH; $h <= $maxH; $h++) {
+            if ($h % 2 !== 0) {
+                continue;
+            }
+            $svg .= '<text x="' . $r1($xCenter($h)) . '" y="' . ($B + 20) . '" text-anchor="middle" '
+                  . 'font-size="15" fill="#9aa6b3">' . $h . '</text>';
+        }
+
+        // Legende
+        $lx = $L + 6; $ly = $T + 14;
+        $svg .= '<rect x="' . $lx . '" y="' . ($ly - 10) . '" width="14" height="10" rx="2" fill="#f7a000" opacity="0.85"/>';
+        $svg .= '<text x="' . ($lx + 20) . '" y="' . ($ly - 1) . '" font-size="15" fill="#cfd6e0">'
+              . htmlspecialchars($this->T('Actual'), ENT_QUOTES) . '</text>';
+        $svg .= '<line x1="' . ($lx + 76) . '" y1="' . ($ly - 5) . '" x2="' . ($lx + 106) . '" y2="' . ($ly - 5)
+              . '" stroke="#ffd27a" stroke-width="3" stroke-dasharray="7 5"/>';
+        $svg .= '<text x="' . ($lx + 112) . '" y="' . ($ly - 1) . '" font-size="15" fill="#cfd6e0">'
+              . htmlspecialchars($this->T('Forecast'), ENT_QUOTES) . '</text>';
+
+        $svg .= '</svg>';
+
+        $title = htmlspecialchars($this->T('Today: forecast vs. actual'), ENT_QUOTES);
+        return '<div class="htitle">' . $title . ' <span style="color:#9aa6b3;">(kWh)</span></div>'
+             . '<div style="background:rgba(255,255,255,0.04);padding:0.5em;border-radius:0.6em;">' . $svg . '</div>';
+    }
+
     private function renderHTML(array $totals, bool $stale): string
     {
         $today    = (float) ($totals['Today'] ?? 0);
@@ -859,9 +952,25 @@ class PVForecastSolar extends IPSModuleStrict
                  . '<div class="track"><div class="fill" style="width:' . $pct . '%;"></div></div></div>';
         };
 
-        // --- Stündliches Profil mit Hover-Tooltip ---
+        // --- Stundenanzeige ---
+        // Wenn eine Ist-Leistungs-Variable konfiguriert ist: Overlay-Diagramm
+        // (Balken = Ist, Linie = Prognose). Sonst: einfaches Forecast-Stundenprofil.
         $hourlyHtml = '';
-        if (!empty($totals['HourlySum']) && is_array($totals['HourlySum'])) {
+        $hasActualVar = $this->ReadPropertyInteger('ActualPowerVariableID') > 0;
+        if ($hasActualVar) {
+            $forecastByHour = [];
+            foreach (($totals['HourlySum'] ?? []) as $ts => $wh) {
+                $t = strtotime((string) $ts);
+                if ($t === false) {
+                    continue;
+                }
+                $h = (int) date('G', $t);
+                $forecastByHour[$h] = ($forecastByHour[$h] ?? 0.0) + (float) $wh / 1000.0;
+            }
+            $actualByHour = $this->getActualHourlyKWh();
+            $hourlyHtml = $this->renderOverlayChart($forecastByHour, $actualByHour);
+        }
+        if ($hourlyHtml === '' && !empty($totals['HourlySum']) && is_array($totals['HourlySum'])) {
             $vals = array_values($totals['HourlySum']);
             $hmax = max($vals) ?: 1.0;
             $bars = '';
