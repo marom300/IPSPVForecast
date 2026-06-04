@@ -808,9 +808,10 @@ class PVForecastSolar extends IPSModuleStrict
     // ---------------------------------------------------------------
 
     /**
-     * Zeichnet ein selbst gerendertes SVG-Diagramm „Prognose vs. Ist" für heute:
-     * Balken = reale Erzeugung (kWh/h), gestrichelte Linie = Prognose (kWh/h).
-     * SVG skaliert über viewBox automatisch auf jede Kachelbreite.
+     * Zeichnet „Prognose vs. Ist" für heute als HÖHENFLEXIBLES Diagramm:
+     * Balken = reale Erzeugung (CSS, height in %), gestrichelte Linie = Prognose
+     * (dünnes SVG-Overlay mit non-scaling-stroke). Die Balkenhöhen sind prozentual,
+     * daher passt sich das Diagramm an jede verfügbare Kachelhöhe an (Flexbox).
      *
      * @param array $forecastByHour [hour 0..23 => kWh]
      * @param array $actualByHour   [hour 0..23 => kWh]
@@ -835,98 +836,60 @@ class PVForecastSolar extends IPSModuleStrict
             $maxVal = 0.1;
         }
 
-        // viewBox-Koordinaten (skalieren später auf 100% Breite).
-        // Flaches Seitenverhältnis (1000x230) -> niedrige gerenderte Höhe,
-        // damit die Box ohne Scrollbalken in eine Kachel passt.
-        $W = 1000; $H = 230;
-        $L = 46; $R = 992; $T = 12; $B = 196;
-        $plotH = $B - $T;
-        $slotW = ($R - $L) / $n;
-
-        $xCenter = fn($h) => $L + $slotW * (($h - $minH) + 0.5);
-        $yVal    = fn($v) => $B - ($v / $maxVal) * $plotH;
-        $r1 = fn($x) => round($x, 1);
-
-        $svg = '<svg viewBox="0 0 ' . $W . ' ' . $H . '" preserveAspectRatio="xMidYMid meet" '
-             . 'style="width:100%;height:auto;display:block;font-family:\'Segoe UI\',Tahoma,sans-serif;">';
-
-        // Gridlines + Y-Beschriftung (0 / halb / max)
-        foreach ([0.0, $maxVal / 2, $maxVal] as $gv) {
-            $y = $yVal($gv);
-            $svg .= '<line x1="' . $L . '" y1="' . $r1($y) . '" x2="' . $R . '" y2="' . $r1($y)
-                  . '" stroke="rgba(255,255,255,0.10)" stroke-width="1"/>';
-            $svg .= '<text x="' . ($L - 6) . '" y="' . $r1($y + 4) . '" text-anchor="end" '
-                  . 'font-size="16" fill="#9aa6b3">' . number_format($gv, 1) . '</text>';
-        }
-
-        // Ist-Balken
-        $barW = $slotW * 0.62;
-        foreach ($actualByHour as $h => $v) {
-            if ($h < $minH || $h > $maxH || $v <= 0) {
-                continue;
+        // Ist-Balken (CSS) + X-Achsenbeschriftung
+        $cols = '';
+        $xax  = '';
+        for ($h = $minH; $h <= $maxH; $h++) {
+            $av = $actualByHour[$h] ?? null;
+            $barHtml = '';
+            if ($av !== null && $av > 0) {
+                $pct = max(1, (int) round($av / $maxVal * 100));
+                $tip = htmlspecialchars($h . ':00 ' . $this->T('Actual') . ': ' . number_format($av, 2) . ' kWh', ENT_QUOTES);
+                $barHtml = '<div class="abar" title="' . $tip . '" style="height:' . $pct . '%;"></div>';
             }
-            $x = $xCenter($h) - $barW / 2;
-            $y = $yVal($v);
-            $svg .= '<rect x="' . $r1($x) . '" y="' . $r1($y) . '" width="' . $r1($barW)
-                  . '" height="' . $r1($B - $y) . '" rx="3" fill="#f7a000" opacity="0.85">'
-                  . '<title>' . $h . ':00 ' . htmlspecialchars($this->T('Actual'), ENT_QUOTES)
-                  . ': ' . number_format($v, 2) . ' kWh</title></rect>';
+            $cols .= '<div class="col">' . $barHtml . '</div>';
+            $xax  .= '<div class="xt">' . ($h % 2 === 0 ? $h : '') . '</div>';
         }
 
-        // „Jetzt"-Markierung
-        $nowH = (float) date('G') + (float) date('i') / 60.0;
-        if ($nowH >= $minH && $nowH <= $maxH + 1) {
-            $xn = $L + $slotW * ($nowH - $minH);
-            $svg .= '<line x1="' . $r1($xn) . '" y1="' . $T . '" x2="' . $r1($xn) . '" y2="' . $B
-                  . '" stroke="rgba(255,255,255,0.28)" stroke-width="1" stroke-dasharray="2 3"/>';
-        }
-
-        // Prognose-Linie (gestrichelt) + Punkte
+        // Prognose-Linie (SVG-Overlay, 0..1000 x 0..100, non-scaling-stroke)
         $pts = [];
         for ($h = $minH; $h <= $maxH; $h++) {
             if (!isset($forecastByHour[$h])) {
                 continue;
             }
-            $pts[] = $r1($xCenter($h)) . ',' . $r1($yVal($forecastByHour[$h]));
+            $x = (($h - $minH) + 0.5) / $n * 1000;
+            $y = (1 - $forecastByHour[$h] / $maxVal) * 100;
+            $pts[] = round($x, 1) . ',' . round($y, 2);
         }
+        $line = '';
         if (count($pts) >= 2) {
-            $svg .= '<polyline points="' . implode(' ', $pts) . '" fill="none" stroke="#ffd27a" '
-                  . 'stroke-width="3" stroke-dasharray="7 5" stroke-linejoin="round" stroke-linecap="round"/>';
-        }
-        for ($h = $minH; $h <= $maxH; $h++) {
-            if (!isset($forecastByHour[$h])) {
-                continue;
-            }
-            $svg .= '<circle cx="' . $r1($xCenter($h)) . '" cy="' . $r1($yVal($forecastByHour[$h]))
-                  . '" r="3" fill="#ffd27a"><title>' . $h . ':00 '
-                  . htmlspecialchars($this->T('Forecast'), ENT_QUOTES)
-                  . ': ' . number_format($forecastByHour[$h], 2) . ' kWh</title></circle>';
+            $line = '<svg class="fcline" viewBox="0 0 1000 100" preserveAspectRatio="none">'
+                  . '<polyline points="' . implode(' ', $pts) . '"/></svg>';
         }
 
-        // X-Beschriftung (alle 2 Stunden)
-        for ($h = $minH; $h <= $maxH; $h++) {
-            if ($h % 2 !== 0) {
-                continue;
-            }
-            $svg .= '<text x="' . $r1($xCenter($h)) . '" y="' . ($B + 20) . '" text-anchor="middle" '
-                  . 'font-size="15" fill="#9aa6b3">' . $h . '</text>';
+        // „Jetzt"-Markierung
+        $nowH = (float) date('G') + (float) date('i') / 60.0;
+        $nowMark = '';
+        if ($nowH >= $minH && $nowH <= $maxH + 1) {
+            $leftPct = (($nowH - $minH) / $n) * 100;
+            $nowMark = '<div class="nowm" style="left:' . round($leftPct, 2) . '%;"></div>';
         }
 
-        // Legende
-        $lx = $L + 6; $ly = $T + 14;
-        $svg .= '<rect x="' . $lx . '" y="' . ($ly - 10) . '" width="14" height="10" rx="2" fill="#f7a000" opacity="0.85"/>';
-        $svg .= '<text x="' . ($lx + 20) . '" y="' . ($ly - 1) . '" font-size="15" fill="#cfd6e0">'
-              . htmlspecialchars($this->T('Actual'), ENT_QUOTES) . '</text>';
-        $svg .= '<line x1="' . ($lx + 76) . '" y1="' . ($ly - 5) . '" x2="' . ($lx + 106) . '" y2="' . ($ly - 5)
-              . '" stroke="#ffd27a" stroke-width="3" stroke-dasharray="7 5"/>';
-        $svg .= '<text x="' . ($lx + 112) . '" y="' . ($ly - 1) . '" font-size="15" fill="#cfd6e0">'
-              . htmlspecialchars($this->T('Forecast'), ENT_QUOTES) . '</text>';
-
-        $svg .= '</svg>';
+        // Gridlines + Y-Labels (max / halb / 0)
+        $grid = '<div class="gl" style="top:0;"><span>' . number_format($maxVal, 1) . '</span></div>'
+              . '<div class="gl" style="top:50%;"><span>' . number_format($maxVal / 2, 1) . '</span></div>'
+              . '<div class="gl gl0" style="top:100%;"><span>0</span></div>';
 
         $title = htmlspecialchars($this->T('Today: forecast vs. actual'), ENT_QUOTES);
-        return '<div class="htitle">' . $title . ' <span style="color:#9aa6b3;">(kWh)</span></div>'
-             . '<div style="background:rgba(255,255,255,0.04);padding:0.5em;border-radius:0.6em;">' . $svg . '</div>';
+        $legA  = htmlspecialchars($this->T('Actual'), ENT_QUOTES);
+        $legF  = htmlspecialchars($this->T('Forecast'), ENT_QUOTES);
+
+        return '<div class="htitle">' . $title . ' <span class="unit">(kWh)</span>'
+             . '<span class="leg"><i class="li1"></i>' . $legA . '<i class="li2"></i>' . $legF . '</span></div>'
+             . '<div class="chartwrap">'
+             .   '<div class="plot">' . $grid . $nowMark . $cols . $line . '</div>'
+             .   '<div class="xax">' . $xax . '</div>'
+             . '</div>';
     }
 
     private function renderHTML(array $totals, bool $stale): string
@@ -1008,37 +971,59 @@ class PVForecastSolar extends IPSModuleStrict
                   . $rowHtml($this->T('Tomorrow'),  round($tomorrow, 2), $max)
                   . $rowHtml($this->T('Day after'), round($dayAfter, 2), $max);
 
-        // Hinweis zur Responsivität:
-        //  - container-type:inline-size auf dem Wrapper -> cqi-Einheiten messen
-        //    die KACHEL-Breite (nicht die Viewport-Breite wie vw). Gleiche Kachel =
-        //    gleiche Darstellung auf jedem Client.
-        //  - font-size doppelt deklariert: erst fixer px-Wert (Fallback für alte
-        //    IPSView-Webviews ohne cqi), dann clamp() mit cqi für moderne Clients.
-        //  - alle Kindgrößen in em -> skalieren mit der einen Basis-Schriftgröße.
+        // Responsivität:
+        //  - Wrapper height:100% + container-type:inline-size -> Karte füllt die
+        //    Kachel; cqi-Schrift skaliert mit der KachelBREITE.
+        //  - Karte ist Flex-Spalte; Kopf/Metriken/Tagesbalken haben feste Höhe,
+        //    der Chart (chartwrap/hourly) bekommt flex:1 und schrumpft/wächst mit
+        //    der verbleibenden KachelHÖHE -> kein Scrollbalken (overflow:hidden).
+        //  - Balkenhöhen prozentual, Prognose-Linie als SVG mit non-scaling-stroke.
         return <<<HTML
-<div id="{$scope}" style="container-type:inline-size;width:100%;">
+<div id="{$scope}" style="container-type:inline-size;width:100%;height:100%;">
 <style>
 #{$scope} .card{font-family:'Segoe UI',Tahoma,sans-serif;color:#e9edf3;box-sizing:border-box;
   font-size:13px;font-size:clamp(10px,3.6cqi,16px);
-  padding:0.6em 0.9em;border-radius:0.8em;
-  background:linear-gradient(135deg,rgba(20,28,40,0.9),rgba(10,14,22,0.9));}
+  height:100%;display:flex;flex-direction:column;overflow:hidden;
+  padding:0.55em 0.85em;border-radius:0.8em;
+  background:linear-gradient(135deg,rgba(20,28,40,0.92),rgba(10,14,22,0.92));}
 #{$scope} .card *{box-sizing:border-box;}
-#{$scope} .head{display:flex;flex-wrap:wrap;align-items:baseline;justify-content:space-between;
-  gap:0.2em 1em;margin-bottom:0.45em;}
+#{$scope} .head{flex:none;display:flex;flex-wrap:wrap;align-items:baseline;justify-content:space-between;
+  gap:0.2em 1em;margin-bottom:0.4em;}
 #{$scope} .title{font-size:1.2em;font-weight:600;}
-#{$scope} .sub{font-size:0.78em;color:#9aa6b3;}
+#{$scope} .sub{font-size:0.76em;color:#9aa6b3;}
 #{$scope} .stale{color:#ffb86b;}
-#{$scope} .metrics{display:flex;flex-wrap:wrap;gap:0.4em 1.3em;margin-bottom:0.4em;}
+#{$scope} .metrics{flex:none;display:flex;flex-wrap:wrap;gap:0.3em 1.3em;margin-bottom:0.35em;}
 #{$scope} .metric{flex:1 1 8em;text-align:center;}
-#{$scope} .metric .lbl{font-size:0.76em;color:#9aa6b3;}
-#{$scope} .metric .val{font-size:1.45em;font-weight:600;line-height:1.1;}
-#{$scope} .row{margin:0.28em 0;}
-#{$scope} .row .cap{display:flex;justify-content:space-between;font-size:0.82em;color:#cfd6e0;margin-bottom:0.15em;}
-#{$scope} .track{background:rgba(255,255,255,0.08);height:0.6em;border-radius:999px;overflow:hidden;}
+#{$scope} .metric .lbl{font-size:0.74em;color:#9aa6b3;}
+#{$scope} .metric .val{font-size:1.4em;font-weight:600;line-height:1.05;}
+#{$scope} .row{flex:none;margin:0.22em 0;}
+#{$scope} .row .cap{display:flex;justify-content:space-between;font-size:0.8em;color:#cfd6e0;margin-bottom:0.12em;}
+#{$scope} .track{background:rgba(255,255,255,0.08);height:0.55em;border-radius:999px;overflow:hidden;}
 #{$scope} .fill{height:100%;background:linear-gradient(90deg,#f7b500,#ff7a00);}
-#{$scope} .htitle{font-size:0.82em;color:#cfd6e0;margin:0.5em 0 0.25em;}
-#{$scope} .hourly{background:rgba(255,255,255,0.04);padding:0.5em;border-radius:0.6em;
-  display:flex;align-items:flex-end;gap:0.12em;height:6em;}
+#{$scope} .htitle{flex:none;font-size:0.8em;color:#cfd6e0;margin:0.45em 0 0.2em;}
+#{$scope} .unit{color:#9aa6b3;}
+#{$scope} .leg{font-size:0.92em;margin-left:0.5em;color:#cfd6e0;white-space:nowrap;}
+#{$scope} .leg i{display:inline-block;vertical-align:middle;margin:0 0.25em 0 0.6em;}
+#{$scope} .leg .li1{width:0.9em;height:0.55em;background:#f7a000;border-radius:1px;}
+#{$scope} .leg .li2{width:1.2em;height:0;border-top:2px dashed #ffd27a;}
+#{$scope} .chartwrap{flex:1 1 0;min-height:4.5em;display:flex;flex-direction:column;
+  background:rgba(255,255,255,0.04);border-radius:0.6em;padding:0.7em 0.5em 0.25em;}
+#{$scope} .plot{position:relative;flex:1 1 0;min-height:3.5em;display:flex;align-items:flex-end;
+  gap:2px;margin-left:2em;}
+#{$scope} .col{flex:1 1 0;height:100%;display:flex;align-items:flex-end;justify-content:center;}
+#{$scope} .abar{width:62%;background:#f7a000;opacity:0.85;border-radius:2px 2px 0 0;}
+#{$scope} .fcline{position:absolute;inset:0;width:100%;height:100%;overflow:visible;pointer-events:none;}
+#{$scope} .fcline polyline{fill:none;stroke:#ffd27a;stroke-width:2;stroke-dasharray:6 4;
+  stroke-linejoin:round;stroke-linecap:round;vector-effect:non-scaling-stroke;}
+#{$scope} .gl{position:absolute;left:0;right:0;border-top:1px solid rgba(255,255,255,0.08);pointer-events:none;}
+#{$scope} .gl span{position:absolute;left:-2em;top:-0.55em;width:1.8em;text-align:right;
+  font-size:0.62em;color:#9aa6b3;}
+#{$scope} .gl0{border-top-color:rgba(255,255,255,0.18);}
+#{$scope} .nowm{position:absolute;top:0;bottom:0;border-left:1px dashed rgba(255,255,255,0.3);pointer-events:none;}
+#{$scope} .xax{flex:none;display:flex;margin-left:2em;margin-top:0.15em;}
+#{$scope} .xt{flex:1 1 0;text-align:center;font-size:0.62em;color:#9aa6b3;}
+#{$scope} .hourly{flex:1 1 0;min-height:3.5em;background:rgba(255,255,255,0.04);padding:0.5em;
+  border-radius:0.6em;display:flex;align-items:flex-end;gap:0.12em;}
 #{$scope} .hbar{position:relative;flex:1 1 0;min-width:2px;align-self:flex-end;
   background:linear-gradient(180deg,#f7b500,#ff7a00);border-radius:3px 3px 0 0;transition:filter .12s;}
 #{$scope} .hbar:hover{filter:brightness(1.3);}
