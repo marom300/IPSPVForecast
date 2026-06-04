@@ -53,6 +53,9 @@ class PVForecastSolar extends IPSModuleStrict
         $this->RegisterPropertyInteger('ActualYieldVariableID', 0);
         $this->RegisterPropertyInteger('CalibrationWindowDays', 10);
 
+        // Prognose-Kurve ins Archiv schreiben (für Charts: Forecast-Linie)
+        $this->RegisterPropertyBoolean('WriteForecastCurve', false);
+
         // Buffer NICHT in Create() leeren! Create() läuft bei jedem Modul-Reload
         // (z. B. nach Update aus dem Store), das würde den Cache jedes Mal wegwerfen.
         // GetBuffer liefert für nie gesetzte Buffer ohnehin '' zurück – wir behandeln
@@ -80,6 +83,14 @@ class PVForecastSolar extends IPSModuleStrict
             $this->RegisterVariableFloat('Correction', $this->Translate('Correction factor'), 'PVF.Factor', 90);
         } elseif (@$this->GetIDForIdent('Correction')) {
             $this->UnregisterVariable('Correction');
+        }
+
+        // Prognose-Kurve-Variable nur wenn aktiviert (geloggt, für Charts)
+        if ($this->ReadPropertyBoolean('WriteForecastCurve')) {
+            $this->RegisterVariableFloat('ForecastEnergy', $this->T('Forecast curve (kWh/h)'), 'PVF.kWh', 45);
+            $this->enableLogging('ForecastEnergy', 0); // 0 = Standard-Aggregation
+        } elseif (@$this->GetIDForIdent('ForecastEnergy')) {
+            $this->UnregisterVariable('ForecastEnergy');
         }
 
         // Timer-Intervall
@@ -288,11 +299,24 @@ class PVForecastSolar extends IPSModuleStrict
                 $totals['DayAfter'] *= $factor;
                 $totals['RemainingToday'] *= $factor;
                 $totals['Correction'] = $factor;
+                // Faktor auch auf Profile/Kurve anwenden, damit alles konsistent ist
+                foreach ($totals['HourlySum'] as $ts => $wh) {
+                    $totals['HourlySum'][$ts] = $wh * $factor;
+                }
+                foreach ($totals['PeriodsSum'] as $ts => $wh) {
+                    $totals['PeriodsSum'][$ts] = $wh * $factor;
+                }
             }
         }
 
         $this->setCachedResult($totals);
         $this->renderAndWrite($totals, false);
+
+        // Prognose-Kurve ins Archiv schreiben (optional, für Charts)
+        if ($this->ReadPropertyBoolean('WriteForecastCurve')) {
+            $this->writeForecastCurve($totals['PeriodsSum'] ?? []);
+        }
+
         $this->setStatusVar(self::STATUS_OK);
     }
 
@@ -425,10 +449,13 @@ class PVForecastSolar extends IPSModuleStrict
             }
         }
 
-        // Stündliches Profil heute
+        // Stündliches Profil heute (für die HTML-Visualisierung)
+        // + volle Periodenreihe (heute+morgen+übermorgen, für die Archiv-Kurve)
         $hourly = [];
+        $periods = [];
         if (isset($result['watt_hours_period']) && is_array($result['watt_hours_period'])) {
             foreach ($result['watt_hours_period'] as $ts => $wh) {
+                $periods[(string) $ts] = (float) $wh;
                 if (str_starts_with((string) $ts, $today)) {
                     $hourly[(string) $ts] = (float) $wh;
                 }
@@ -442,6 +469,7 @@ class PVForecastSolar extends IPSModuleStrict
             'PowerNow'       => $powerNow,
             'RemainingToday' => $remainingTodayWh / 1000.0,
             'Hourly'         => $hourly,
+            'Periods'        => $periods,
         ];
     }
 
@@ -457,6 +485,7 @@ class PVForecastSolar extends IPSModuleStrict
             'PowerNow'       => 0.0,
             'RemainingToday' => 0.0,
             'HourlySum'      => [],
+            'PeriodsSum'     => [],
         ];
         foreach ($perRoofResults as $r) {
             $sum['Today']          += (float) $r['Today'];
@@ -467,8 +496,12 @@ class PVForecastSolar extends IPSModuleStrict
             foreach (($r['Hourly'] ?? []) as $ts => $wh) {
                 $sum['HourlySum'][$ts] = ($sum['HourlySum'][$ts] ?? 0.0) + (float) $wh;
             }
+            foreach (($r['Periods'] ?? []) as $ts => $wh) {
+                $sum['PeriodsSum'][$ts] = ($sum['PeriodsSum'][$ts] ?? 0.0) + (float) $wh;
+            }
         }
         ksort($sum['HourlySum']);
+        ksort($sum['PeriodsSum']);
         return $sum;
     }
 
@@ -674,15 +707,75 @@ class PVForecastSolar extends IPSModuleStrict
 
         // Logging aktivieren für die wichtigen Tageswerte
         foreach (['Today', 'Tomorrow', 'DayAfter'] as $ident) {
-            $vid = @$this->GetIDForIdent($ident);
-            if ($vid && function_exists('AC_SetLoggingStatus')) {
-                $aid = @IPS_GetInstanceListByModuleID('{43192F0B-135B-4CE7-A0A7-1475603F3060}'); // Archive Control
-                if (is_array($aid) && count($aid) > 0) {
-                    @AC_SetLoggingStatus($aid[0], $vid, true);
-                    @AC_SetAggregationType($aid[0], $vid, 0); // Counter
-                }
-            }
+            $this->enableLogging($ident, 0);
         }
+    }
+
+    /**
+     * Liefert die InstanceID des (ersten) Archive-Control-Moduls oder 0.
+     */
+    private function getArchiveID(): int
+    {
+        $ids = @IPS_GetInstanceListByModuleID('{43192F0B-135B-4CE7-A0A7-1475603F3060}');
+        return (is_array($ids) && count($ids) > 0) ? (int) $ids[0] : 0;
+    }
+
+    /**
+     * Aktiviert das Logging einer Variable im Archiv.
+     * $aggregation: 0 = Standard (Mittelwert), 1 = Zähler etc. (siehe IPS-Doku)
+     */
+    private function enableLogging(string $ident, int $aggregation = 0): void
+    {
+        $aid = $this->getArchiveID();
+        $vid = @$this->GetIDForIdent($ident);
+        if ($aid && $vid && function_exists('AC_SetLoggingStatus')) {
+            @AC_SetLoggingStatus($aid, $vid, true);
+            @AC_SetAggregationType($aid, $vid, $aggregation);
+            @AC_ReAggregateVariable($aid, $vid);
+        }
+    }
+
+    /**
+     * Schreibt die Prognose-Energiekurve (Wh je Periode) mit ihren echten –
+     * teils zukünftigen – Zeitstempeln ins Archiv der Variable ForecastEnergy.
+     * Dadurch kann sie als Linie in einem WebFront-/Diagramm-Chart neben der
+     * real geloggten Erzeugung dargestellt werden.
+     *
+     * @param array $periodsSumWh [timestamp-string => Wh]
+     */
+    private function writeForecastCurve(array $periodsSumWh): void
+    {
+        $aid = $this->getArchiveID();
+        $vid = @$this->GetIDForIdent('ForecastEnergy');
+        if (!$aid || !$vid || empty($periodsSumWh) || !function_exists('AC_AddLoggedValues')) {
+            return;
+        }
+
+        $rows = [];
+        foreach ($periodsSumWh as $ts => $wh) {
+            $t = strtotime((string) $ts);
+            if ($t === false) {
+                continue;
+            }
+            $rows[] = [
+                'TimeStamp' => $t,
+                'Value'     => (float) $wh / 1000.0, // Wh -> kWh
+                'Duration'  => 0,
+            ];
+        }
+        if (empty($rows)) {
+            return;
+        }
+
+        usort($rows, fn($a, $b) => $a['TimeStamp'] <=> $b['TimeStamp']);
+        $start = (int) $rows[0]['TimeStamp'];
+        $end   = (int) $rows[count($rows) - 1]['TimeStamp'];
+
+        // Vorhandene Forecast-Punkte im selben Zeitfenster entfernen, damit sich
+        // bei jedem Lauf die aktuelle Kurve ergibt (keine Dubletten/Altwerte).
+        @AC_DeleteVariableData($aid, $vid, $start, $end);
+        @AC_AddLoggedValues($aid, $vid, $rows);
+        @AC_ReAggregateVariable($aid, $vid);
     }
 
     private function registerPerRoofVariables(): void
@@ -734,83 +827,110 @@ class PVForecastSolar extends IPSModuleStrict
 
         $max = max($today, $tomorrow, $dayAfter, 0.01);
 
-        // Fluid Font-Größen: clamp(min, ideal, max) – ideal skaliert mit Viewport-Breite
-        // Tagesbalken
-        $bar = function (string $label, float $kwh, float $max): string {
+        // Eindeutiger Scope pro Instanz -> mehrere HTMLBoxen auf einer Seite
+        // kollidieren nicht und das <style> bleibt lokal.
+        $scope = 'pvf-' . $this->InstanceID;
+
+        // --- Tagesbalken (HTML, gestylt über .row im <style>-Block) ---
+        $rowHtml = function (string $label, float $kwh, float $max): string {
             $pct = max(2, (int) round(($kwh / $max) * 100));
             $lbl = htmlspecialchars($label, ENT_QUOTES);
-            return <<<HTML
-<div style="margin:0.45em 0;">
-  <div style="display:flex;justify-content:space-between;font-size:clamp(11px,1.4vw,13px);color:#cfd6e0;margin-bottom:3px;">
-    <span>{$lbl}</span><span>{$kwh} kWh</span>
-  </div>
-  <div style="background:rgba(255,255,255,0.08);height:clamp(8px,1.2vw,14px);border-radius:999px;overflow:hidden;">
-    <div style="width:{$pct}%;height:100%;background:linear-gradient(90deg,#f7b500,#ff7a00);"></div>
-  </div>
-</div>
-HTML;
+            $val = number_format($kwh, 2, '.', '');
+            return '<div class="row"><div class="cap"><span>' . $lbl . '</span>'
+                 . '<span>' . $val . ' kWh</span></div>'
+                 . '<div class="track"><div class="fill" style="width:' . $pct . '%;"></div></div></div>';
         };
 
-        // Stündliches Profil – Bars als flex:1, füllen die volle verfügbare Breite
+        // --- Stündliches Profil mit Hover-Tooltip ---
         $hourlyHtml = '';
         if (!empty($totals['HourlySum']) && is_array($totals['HourlySum'])) {
             $vals = array_values($totals['HourlySum']);
             $hmax = max($vals) ?: 1.0;
             $bars = '';
             foreach ($totals['HourlySum'] as $ts => $wh) {
-                $pct = (int) round(($wh / $hmax) * 100);
-                $title = sprintf('%s: %.0f Wh', (string) $ts, (float) $wh);
-                // flex:1 → Bars verteilen sich auf die volle Breite.
-                // height via aspect-irrelevant: nutzen feste Container-Höhe + prozentuale Bar-Höhe.
-                $bars .= '<div title="' . htmlspecialchars($title, ENT_QUOTES) . '" '
-                       . 'style="flex:1 1 0;min-width:3px;max-width:22px;margin:0 1px;'
-                       . 'align-self:flex-end;height:' . max(2, $pct) . '%;'
-                       . 'background:linear-gradient(180deg,#f7b500,#ff7a00);border-radius:2px 2px 0 0;"></div>';
+                $pct = max(2, (int) round(($wh / $hmax) * 100));
+                $hm  = date('H:i', (int) strtotime((string) $ts));
+                $tip = htmlspecialchars(sprintf('%s · %d Wh', $hm, (int) round((float) $wh)), ENT_QUOTES);
+                $bars .= '<div class="hbar" title="' . $tip . '" style="height:' . $pct . '%;">'
+                       . '<span class="tip">' . $tip . '</span></div>';
             }
-            $hourlyHtml = '<div style="margin-top:0.9em;">'
-                . '<div style="font-size:clamp(11px,1.4vw,13px);color:#cfd6e0;margin-bottom:4px;">'
-                . $this->Translate('Hourly profile today') . '</div>'
-                . '<div style="background:rgba(255,255,255,0.04);padding:6px;border-radius:8px;'
-                . 'display:flex;align-items:flex-end;height:clamp(50px,9vw,110px);">'
-                . $bars . '</div></div>';
+            $hourlyHtml = '<div class="htitle">' . htmlspecialchars($this->T('Hourly profile today'), ENT_QUOTES)
+                . '</div><div class="hourly">' . $bars . '</div>';
         }
 
         $lat = (float) $this->ReadPropertyFloat('Latitude');
         $lon = (float) $this->ReadPropertyFloat('Longitude');
         $loc = sprintf('%.3f / %.3f', $lat, $lon);
         $last = date('Y-m-d H:i');
-        $staleNote = $stale ? '<span style="color:#ffb86b;">&nbsp;(' . $this->Translate('cached') . ')</span>' : '';
+        $staleNote = $stale
+            ? ' <span class="stale">(' . htmlspecialchars($this->T('cached'), ENT_QUOTES) . ')</span>'
+            : '';
         $corrLine = ($corr !== null)
-            ? '<span style="margin-left:10px;white-space:nowrap;">' . $this->Translate('Correction') . ': ' . number_format($corr, 3) . '</span>'
+            ? ' · ' . htmlspecialchars($this->T('Correction'), ENT_QUOTES) . ': ' . number_format($corr, 3)
             : '';
 
+        $tTitle  = htmlspecialchars($this->T('PV forecast'), ENT_QUOTES);
+        $tPower  = htmlspecialchars($this->T('Power now'), ENT_QUOTES);
+        $tRemain = htmlspecialchars($this->T('Remaining today'), ENT_QUOTES);
+        $powerVal  = number_format($power, 0, '.', '');
+        $remainVal = number_format($remain, 2, '.', '');
+
+        $rowsHtml = $rowHtml($this->T('Today'),     round($today, 2),    $max)
+                  . $rowHtml($this->T('Tomorrow'),  round($tomorrow, 2), $max)
+                  . $rowHtml($this->T('Day after'), round($dayAfter, 2), $max);
+
+        // Hinweis zur Responsivität:
+        //  - container-type:inline-size auf dem Wrapper -> cqi-Einheiten messen
+        //    die KACHEL-Breite (nicht die Viewport-Breite wie vw). Gleiche Kachel =
+        //    gleiche Darstellung auf jedem Client.
+        //  - font-size doppelt deklariert: erst fixer px-Wert (Fallback für alte
+        //    IPSView-Webviews ohne cqi), dann clamp() mit cqi für moderne Clients.
+        //  - alle Kindgrößen in em -> skalieren mit der einen Basis-Schriftgröße.
         return <<<HTML
-<div style="font-family:'Segoe UI',Tahoma,sans-serif;color:#e9edf3;
-            padding:clamp(10px,1.2vw,16px) clamp(12px,1.4vw,20px);
-            border-radius:12px;
-            background:linear-gradient(135deg,rgba(20,28,40,0.85),rgba(10,14,22,0.85));
-            width:100%;box-sizing:border-box;">
-  <div style="display:flex;flex-wrap:wrap;align-items:baseline;justify-content:space-between;
-              gap:6px 14px;margin-bottom:10px;">
-    <div style="font-size:clamp(15px,1.8vw,20px);font-weight:600;">☀ {$this->Translate('PV forecast')}</div>
-    <div style="font-size:clamp(10px,1.1vw,13px);color:#9aa6b3;">
-      {$loc} · {$last}{$staleNote}{$corrLine}
-    </div>
+<div id="{$scope}" style="container-type:inline-size;width:100%;">
+<style>
+#{$scope} .card{font-family:'Segoe UI',Tahoma,sans-serif;color:#e9edf3;box-sizing:border-box;
+  font-size:14px;font-size:clamp(11px,4.2cqi,17px);
+  padding:0.85em 1.15em;border-radius:0.85em;
+  background:linear-gradient(135deg,rgba(20,28,40,0.9),rgba(10,14,22,0.9));}
+#{$scope} .card *{box-sizing:border-box;}
+#{$scope} .head{display:flex;flex-wrap:wrap;align-items:baseline;justify-content:space-between;
+  gap:0.25em 1em;margin-bottom:0.75em;}
+#{$scope} .title{font-size:1.3em;font-weight:600;}
+#{$scope} .sub{font-size:0.8em;color:#9aa6b3;}
+#{$scope} .stale{color:#ffb86b;}
+#{$scope} .metrics{display:flex;flex-wrap:wrap;gap:0.6em 1.3em;margin-bottom:0.6em;}
+#{$scope} .metric{flex:1 1 8em;text-align:center;}
+#{$scope} .metric .lbl{font-size:0.78em;color:#9aa6b3;}
+#{$scope} .metric .val{font-size:1.7em;font-weight:600;line-height:1.15;}
+#{$scope} .row{margin:0.4em 0;}
+#{$scope} .row .cap{display:flex;justify-content:space-between;font-size:0.85em;color:#cfd6e0;margin-bottom:0.22em;}
+#{$scope} .track{background:rgba(255,255,255,0.08);height:0.7em;border-radius:999px;overflow:hidden;}
+#{$scope} .fill{height:100%;background:linear-gradient(90deg,#f7b500,#ff7a00);}
+#{$scope} .htitle{font-size:0.85em;color:#cfd6e0;margin:0.75em 0 0.3em;}
+#{$scope} .hourly{background:rgba(255,255,255,0.04);padding:0.5em;border-radius:0.6em;
+  display:flex;align-items:flex-end;gap:0.12em;height:6em;}
+#{$scope} .hbar{position:relative;flex:1 1 0;min-width:2px;align-self:flex-end;
+  background:linear-gradient(180deg,#f7b500,#ff7a00);border-radius:3px 3px 0 0;transition:filter .12s;}
+#{$scope} .hbar:hover{filter:brightness(1.3);}
+#{$scope} .tip{position:absolute;bottom:108%;left:50%;transform:translateX(-50%);white-space:nowrap;
+  background:rgba(8,12,20,0.97);color:#e9edf3;font-size:0.72em;padding:0.25em 0.5em;
+  border-radius:0.35em;border:1px solid rgba(255,255,255,0.14);
+  opacity:0;pointer-events:none;transition:opacity .12s;z-index:9;}
+#{$scope} .hbar:hover .tip{opacity:1;}
+</style>
+<div class="card">
+  <div class="head">
+    <div class="title">☀ {$tTitle}</div>
+    <div class="sub">{$loc} · {$last}{$staleNote}{$corrLine}</div>
   </div>
-  <div style="display:flex;flex-wrap:wrap;gap:10px 18px;margin-bottom:8px;">
-    <div style="flex:1 1 130px;text-align:center;">
-      <div style="font-size:clamp(10px,1.1vw,13px);color:#9aa6b3;">{$this->Translate('Power now')}</div>
-      <div style="font-size:clamp(17px,2.3vw,26px);font-weight:600;">{$power} W</div>
-    </div>
-    <div style="flex:1 1 130px;text-align:center;">
-      <div style="font-size:clamp(10px,1.1vw,13px);color:#9aa6b3;">{$this->Translate('Remaining today')}</div>
-      <div style="font-size:clamp(17px,2.3vw,26px);font-weight:600;">{$remain} kWh</div>
-    </div>
+  <div class="metrics">
+    <div class="metric"><div class="lbl">{$tPower}</div><div class="val">{$powerVal} W</div></div>
+    <div class="metric"><div class="lbl">{$tRemain}</div><div class="val">{$remainVal} kWh</div></div>
   </div>
-  {$bar($this->Translate('Today'),         round($today, 2), $max)}
-  {$bar($this->Translate('Tomorrow'),      round($tomorrow, 2), $max)}
-  {$bar($this->Translate('Day after'),     round($dayAfter, 2), $max)}
+  {$rowsHtml}
   {$hourlyHtml}
+</div>
 </div>
 HTML;
     }

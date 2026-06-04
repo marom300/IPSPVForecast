@@ -70,6 +70,7 @@ Veröffentlichungsreifes Community-Modul für IP-Symcon (≥ 7.0, PHP 8.x) das v
 | `CalibrationActive` | bool | false | Selbstkalibrierung an |
 | `ActualYieldVariableID` | int | 0 | Variable mit realem Tagesertrag (kWh) |
 | `CalibrationWindowDays` | int | 10 | Tage für Korrekturfaktor-Berechnung |
+| `WriteForecastCurve` | bool | false | Prognose-Kurve (kWh/h) ins Archiv schreiben (für Charts) |
 
 Buffer (`SetBuffer`):
 - `LastResult` – letztes vollständiges Ergebnis (JSON)
@@ -88,6 +89,7 @@ Summen (immer):
 - `Status` (Int + Profil OK/Error/Ratelimit)
 - `Visualization` (~HTMLBox)
 - `Correction` (Float, optional)
+- `ForecastEnergy` (kWh/h, geloggt, optional) – Prognose-Kurve mit Zukunfts-Zeitstempeln via `AC_AddLoggedValues` für Diagramme
 
 Je Fläche (wenn aktiv): `Roof{Index}Today`, `Roof{Index}Tomorrow`
 

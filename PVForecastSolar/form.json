@@ -158,6 +158,15 @@
                     "caption": "Create variables per roof"
                 },
                 {
+                    "type": "CheckBox",
+                    "name": "WriteForecastCurve",
+                    "caption": "Write forecast curve to archive (for charts)"
+                },
+                {
+                    "type": "Label",
+                    "caption": "The forecast curve is logged into the variable \"Forecast curve (kWh/h)\" with future timestamps. Add it as a line to a chart next to your actual generation."
+                },
+                {
                     "type": "Label",
                     "caption": "Public tier ≈ 12 requests/hour per IP. One request per active roof, per update."
                 }
