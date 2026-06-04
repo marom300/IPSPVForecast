@@ -835,9 +835,11 @@ class PVForecastSolar extends IPSModuleStrict
             $maxVal = 0.1;
         }
 
-        // viewBox-Koordinaten (skalieren später auf 100% Breite)
-        $W = 1000; $H = 340;
-        $L = 46; $R = 992; $T = 14; $B = 300;
+        // viewBox-Koordinaten (skalieren später auf 100% Breite).
+        // Flaches Seitenverhältnis (1000x230) -> niedrige gerenderte Höhe,
+        // damit die Box ohne Scrollbalken in eine Kachel passt.
+        $W = 1000; $H = 230;
+        $L = 46; $R = 992; $T = 12; $B = 196;
         $plotH = $B - $T;
         $slotW = ($R - $L) / $n;
 
@@ -1017,24 +1019,24 @@ class PVForecastSolar extends IPSModuleStrict
 <div id="{$scope}" style="container-type:inline-size;width:100%;">
 <style>
 #{$scope} .card{font-family:'Segoe UI',Tahoma,sans-serif;color:#e9edf3;box-sizing:border-box;
-  font-size:14px;font-size:clamp(11px,4.2cqi,17px);
-  padding:0.85em 1.15em;border-radius:0.85em;
+  font-size:13px;font-size:clamp(10px,3.6cqi,16px);
+  padding:0.6em 0.9em;border-radius:0.8em;
   background:linear-gradient(135deg,rgba(20,28,40,0.9),rgba(10,14,22,0.9));}
 #{$scope} .card *{box-sizing:border-box;}
 #{$scope} .head{display:flex;flex-wrap:wrap;align-items:baseline;justify-content:space-between;
-  gap:0.25em 1em;margin-bottom:0.75em;}
-#{$scope} .title{font-size:1.3em;font-weight:600;}
-#{$scope} .sub{font-size:0.8em;color:#9aa6b3;}
+  gap:0.2em 1em;margin-bottom:0.45em;}
+#{$scope} .title{font-size:1.2em;font-weight:600;}
+#{$scope} .sub{font-size:0.78em;color:#9aa6b3;}
 #{$scope} .stale{color:#ffb86b;}
-#{$scope} .metrics{display:flex;flex-wrap:wrap;gap:0.6em 1.3em;margin-bottom:0.6em;}
+#{$scope} .metrics{display:flex;flex-wrap:wrap;gap:0.4em 1.3em;margin-bottom:0.4em;}
 #{$scope} .metric{flex:1 1 8em;text-align:center;}
-#{$scope} .metric .lbl{font-size:0.78em;color:#9aa6b3;}
-#{$scope} .metric .val{font-size:1.7em;font-weight:600;line-height:1.15;}
-#{$scope} .row{margin:0.4em 0;}
-#{$scope} .row .cap{display:flex;justify-content:space-between;font-size:0.85em;color:#cfd6e0;margin-bottom:0.22em;}
-#{$scope} .track{background:rgba(255,255,255,0.08);height:0.7em;border-radius:999px;overflow:hidden;}
+#{$scope} .metric .lbl{font-size:0.76em;color:#9aa6b3;}
+#{$scope} .metric .val{font-size:1.45em;font-weight:600;line-height:1.1;}
+#{$scope} .row{margin:0.28em 0;}
+#{$scope} .row .cap{display:flex;justify-content:space-between;font-size:0.82em;color:#cfd6e0;margin-bottom:0.15em;}
+#{$scope} .track{background:rgba(255,255,255,0.08);height:0.6em;border-radius:999px;overflow:hidden;}
 #{$scope} .fill{height:100%;background:linear-gradient(90deg,#f7b500,#ff7a00);}
-#{$scope} .htitle{font-size:0.85em;color:#cfd6e0;margin:0.75em 0 0.3em;}
+#{$scope} .htitle{font-size:0.82em;color:#cfd6e0;margin:0.5em 0 0.25em;}
 #{$scope} .hourly{background:rgba(255,255,255,0.04);padding:0.5em;border-radius:0.6em;
   display:flex;align-items:flex-end;gap:0.12em;height:6em;}
 #{$scope} .hbar{position:relative;flex:1 1 0;min-width:2px;align-self:flex-end;
