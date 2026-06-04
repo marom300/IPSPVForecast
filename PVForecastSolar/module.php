@@ -761,7 +761,9 @@ class PVForecastSolar extends IPSModuleStrict
                 continue;
             }
             $kwh = (float) $wh / 1000.0; // Wh -> kWh
-            $rows[] = ['TimeStamp' => $t, 'Value' => $kwh, 'Duration' => 0];
+            // WICHTIG: AC_AddLoggedValues akzeptiert NUR 'TimeStamp' und 'Value'.
+            // Ein 'Duration'-Feld führt zu "Value contains invalid fields".
+            $rows[] = ['TimeStamp' => $t, 'Value' => $kwh];
             // Wert der aktuell laufenden Periode (für die Anzeige im Objektbaum)
             if ($t <= $now && $t > $bestT) {
                 $bestT = $t;
