@@ -751,17 +751,22 @@ class PVForecastSolar extends IPSModuleStrict
             return;
         }
 
+        $now = time();
         $rows = [];
+        $currentKWh = 0.0;
+        $bestT = -1;
         foreach ($periodsSumWh as $ts => $wh) {
             $t = strtotime((string) $ts);
             if ($t === false) {
                 continue;
             }
-            $rows[] = [
-                'TimeStamp' => $t,
-                'Value'     => (float) $wh / 1000.0, // Wh -> kWh
-                'Duration'  => 0,
-            ];
+            $kwh = (float) $wh / 1000.0; // Wh -> kWh
+            $rows[] = ['TimeStamp' => $t, 'Value' => $kwh, 'Duration' => 0];
+            // Wert der aktuell laufenden Periode (für die Anzeige im Objektbaum)
+            if ($t <= $now && $t > $bestT) {
+                $bestT = $t;
+                $currentKWh = $kwh;
+            }
         }
         if (empty($rows)) {
             return;
@@ -771,9 +776,15 @@ class PVForecastSolar extends IPSModuleStrict
         $start = (int) $rows[0]['TimeStamp'];
         $end   = (int) $rows[count($rows) - 1]['TimeStamp'];
 
-        // Vorhandene Forecast-Punkte im selben Zeitfenster entfernen, damit sich
-        // bei jedem Lauf die aktuelle Kurve ergibt (keine Dubletten/Altwerte).
+        // 1) Aktuellen Wert setzen -> Objektbaum zeigt einen Wert + Zeitstempel
+        //    (löst auch ein Logging bei "jetzt" aus, das Schritt 2 wieder entfernt)
+        $this->SetValue('ForecastEnergy', $currentKWh);
+
+        // 2) Vorhandene Forecast-Punkte im Fenster entfernen (inkl. des eben durch
+        //    SetValue erzeugten Punktes bei "jetzt") -> keine Dubletten/Altwerte.
         @AC_DeleteVariableData($aid, $vid, $start, $end);
+
+        // 3) Saubere Kurve mit ihren echten (Zukunfts-)Zeitstempeln schreiben.
         @AC_AddLoggedValues($aid, $vid, $rows);
         @AC_ReAggregateVariable($aid, $vid);
     }
