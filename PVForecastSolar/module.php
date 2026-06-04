@@ -776,17 +776,22 @@ class PVForecastSolar extends IPSModuleStrict
         $start = (int) $rows[0]['TimeStamp'];
         $end   = (int) $rows[count($rows) - 1]['TimeStamp'];
 
-        // 1) Aktuellen Wert setzen -> Objektbaum zeigt einen Wert + Zeitstempel
-        //    (löst auch ein Logging bei "jetzt" aus, das Schritt 2 wieder entfernt)
+        // Aktuellen Wert setzen -> Objektbaum zeigt einen Wert + Zeitstempel
         $this->SetValue('ForecastEnergy', $currentKWh);
 
-        // 2) Vorhandene Forecast-Punkte im Fenster entfernen (inkl. des eben durch
-        //    SetValue erzeugten Punktes bei "jetzt") -> keine Dubletten/Altwerte.
-        @AC_DeleteVariableData($aid, $vid, $start, $end);
-
-        // 3) Saubere Kurve mit ihren echten (Zukunfts-)Zeitstempeln schreiben.
-        @AC_AddLoggedValues($aid, $vid, $rows);
-        @AC_ReAggregateVariable($aid, $vid);
+        // Archiv-Schreiben mit echter Fehlermeldung (kein @-Suppressing), damit
+        // wir sehen, falls IPS Zukunfts-Zeitstempel ablehnt o. Ä.
+        try {
+            AC_DeleteVariableData($aid, $vid, $start, $end);
+            AC_AddLoggedValues($aid, $vid, $rows);
+            AC_ReAggregateVariable($aid, $vid);
+            $this->LogMessage(sprintf(
+                'ForecastCurve: %d Punkte ins Archiv geschrieben (%s .. %s).',
+                count($rows), date('Y-m-d H:i', $start), date('Y-m-d H:i', $end)
+            ), KL_NOTIFY);
+        } catch (Throwable $e) {
+            $this->LogMessage('ForecastCurve-Archiv fehlgeschlagen: ' . $e->getMessage(), KL_ERROR);
+        }
     }
 
     private function registerPerRoofVariables(): void
@@ -861,7 +866,7 @@ class PVForecastSolar extends IPSModuleStrict
             foreach ($totals['HourlySum'] as $ts => $wh) {
                 $pct = max(2, (int) round(($wh / $hmax) * 100));
                 $hm  = date('H:i', (int) strtotime((string) $ts));
-                $tip = htmlspecialchars(sprintf('%s · %d Wh', $hm, (int) round((float) $wh)), ENT_QUOTES);
+                $tip = htmlspecialchars(sprintf('%s · %.2f kWh', $hm, ((float) $wh) / 1000.0), ENT_QUOTES);
                 $bars .= '<div class="hbar" title="' . $tip . '" style="height:' . $pct . '%;">'
                        . '<span class="tip">' . $tip . '</span></div>';
             }
