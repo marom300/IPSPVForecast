@@ -110,7 +110,7 @@ class PVForecastSolar extends IPSModuleStrict
         $form = json_decode(file_get_contents($formPath), true);
 
         // Korrekturfaktor anzeigen (read-only Label)
-        $correction = (float) $this->GetAttributeString('Correction');
+        $correction = (float) $this->ReadAttributeString('Correction');
         if ($correction <= 0) {
             $correction = 1.0;
         }
@@ -295,7 +295,7 @@ class PVForecastSolar extends IPSModuleStrict
         // Korrekturfaktor
         if ($this->ReadPropertyBoolean('CalibrationActive')) {
             $this->updateCalibration($totals['Today']);
-            $factor = (float) $this->GetAttributeString('Correction');
+            $factor = (float) $this->ReadAttributeString('Correction');
             if ($factor > 0) {
                 $totals['Today'] *= $factor;
                 $totals['Tomorrow'] *= $factor;
@@ -523,7 +523,7 @@ class PVForecastSolar extends IPSModuleStrict
         $actualNow = (float) GetValue($varId);
         $today = date('Y-m-d');
 
-        $history = json_decode($this->GetAttributeString('History'), true);
+        $history = json_decode($this->ReadAttributeString('History'), true);
         if (!is_array($history)) {
             $history = [];
         }
@@ -544,7 +544,7 @@ class PVForecastSolar extends IPSModuleStrict
         while (count($history) > $window + 1) {
             array_shift($history);
         }
-        $this->SetAttributeString('History', json_encode($history));
+        $this->WriteAttributeString('History', json_encode($history));
 
         $sumA = 0.0;
         $sumF = 0.0;
@@ -561,7 +561,7 @@ class PVForecastSolar extends IPSModuleStrict
         }
         if ($sumF > 0) {
             $factor = max(0.5, min(1.5, $sumA / $sumF));
-            $this->SetAttributeString('Correction', (string) $factor);
+            $this->WriteAttributeString('Correction', (string) $factor);
             if (@$this->GetIDForIdent('Correction')) {
                 $this->SetValue('Correction', $factor);
             }
@@ -641,7 +641,7 @@ class PVForecastSolar extends IPSModuleStrict
 
     private function getCachedResult(): ?array
     {
-        $raw = $this->GetAttributeString('LastResult');
+        $raw = $this->ReadAttributeString('LastResult');
         if ($raw === '') {
             return null;
         }
@@ -651,7 +651,7 @@ class PVForecastSolar extends IPSModuleStrict
 
     private function setCachedResult(array $data): void
     {
-        $this->SetAttributeString('LastResult', json_encode($data));
+        $this->WriteAttributeString('LastResult', json_encode($data));
     }
 
     private function fmt(float $v): string
