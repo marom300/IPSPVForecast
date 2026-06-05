@@ -56,10 +56,13 @@ class PVForecastSolar extends IPSModuleStrict
         // Reale PV-Leistung (W) für das Overlay-Diagramm (Prognose vs. Ist)
         $this->RegisterPropertyInteger('ActualPowerVariableID', 0);
 
-        // Buffer NICHT in Create() leeren! Create() läuft bei jedem Modul-Reload
-        // (z. B. nach Update aus dem Store), das würde den Cache jedes Mal wegwerfen.
-        // GetBuffer liefert für nie gesetzte Buffer ohnehin '' zurück – wir behandeln
-        // das in getCachedResult() / updateCalibration() / GetConfigurationForm() defensiv.
+        // Persistente Speicher als ATTRIBUTE (nicht Buffer!): Attribute werden auf
+        // Platte gespeichert und überleben IPS-Neustarts/Updates. Buffer sind nur
+        // im RAM und gehen bei jedem Neustart verloren -> Cache wäre ständig leer.
+        $this->RegisterAttributeString('LastResult', '');   // letztes vollständiges Ergebnis
+        $this->RegisterAttributeString('History', '[]');    // Ringpuffer Prognose/Ist je Tag
+        $this->RegisterAttributeString('Correction', '1.0'); // aktueller Korrekturfaktor
+        // LastRatelimit bleibt bewusst ein Buffer (transient, darf bei Neustart weg sein).
 
         // Timer (Callback: public method UpdateForecast)
         $this->RegisterTimer('UpdateTimer', 0, 'PVF_UpdateForecast($_IPS[\'TARGET\']);');
@@ -107,7 +110,7 @@ class PVForecastSolar extends IPSModuleStrict
         $form = json_decode(file_get_contents($formPath), true);
 
         // Korrekturfaktor anzeigen (read-only Label)
-        $correction = (float) $this->GetBuffer('Correction');
+        $correction = (float) $this->GetAttributeString('Correction');
         if ($correction <= 0) {
             $correction = 1.0;
         }
@@ -292,7 +295,7 @@ class PVForecastSolar extends IPSModuleStrict
         // Korrekturfaktor
         if ($this->ReadPropertyBoolean('CalibrationActive')) {
             $this->updateCalibration($totals['Today']);
-            $factor = (float) $this->GetBuffer('Correction');
+            $factor = (float) $this->GetAttributeString('Correction');
             if ($factor > 0) {
                 $totals['Today'] *= $factor;
                 $totals['Tomorrow'] *= $factor;
@@ -520,7 +523,7 @@ class PVForecastSolar extends IPSModuleStrict
         $actualNow = (float) GetValue($varId);
         $today = date('Y-m-d');
 
-        $history = json_decode($this->GetBuffer('History'), true);
+        $history = json_decode($this->GetAttributeString('History'), true);
         if (!is_array($history)) {
             $history = [];
         }
@@ -541,7 +544,7 @@ class PVForecastSolar extends IPSModuleStrict
         while (count($history) > $window + 1) {
             array_shift($history);
         }
-        $this->SetBuffer('History', json_encode($history));
+        $this->SetAttributeString('History', json_encode($history));
 
         $sumA = 0.0;
         $sumF = 0.0;
@@ -558,7 +561,7 @@ class PVForecastSolar extends IPSModuleStrict
         }
         if ($sumF > 0) {
             $factor = max(0.5, min(1.5, $sumA / $sumF));
-            $this->SetBuffer('Correction', (string) $factor);
+            $this->SetAttributeString('Correction', (string) $factor);
             if (@$this->GetIDForIdent('Correction')) {
                 $this->SetValue('Correction', $factor);
             }
@@ -638,7 +641,7 @@ class PVForecastSolar extends IPSModuleStrict
 
     private function getCachedResult(): ?array
     {
-        $raw = $this->GetBuffer('LastResult');
+        $raw = $this->GetAttributeString('LastResult');
         if ($raw === '') {
             return null;
         }
@@ -648,7 +651,7 @@ class PVForecastSolar extends IPSModuleStrict
 
     private function setCachedResult(array $data): void
     {
-        $this->SetBuffer('LastResult', json_encode($data));
+        $this->SetAttributeString('LastResult', json_encode($data));
     }
 
     private function fmt(float $v): string
@@ -836,17 +839,14 @@ class PVForecastSolar extends IPSModuleStrict
             $maxVal = 0.1;
         }
 
-        // Ist-Balken (CSS) + X-Achsenbeschriftung + Hover-Tooltip je Stunde
+        // Ist-Balken (CSS) + X-Achsenbeschriftung + Hover-Tooltip direkt am Balken
+        // bzw. am Prognose-Punkt (für Stunden ohne Ist-Balken).
         $cols = '';
         $xax  = '';
         for ($h = $minH; $h <= $maxH; $h++) {
             $av = $actualByHour[$h] ?? null;
             $fv = $forecastByHour[$h] ?? null;
-            $barHtml = '';
-            if ($av !== null && $av > 0) {
-                $pct = max(1, (int) round($av / $maxVal * 100));
-                $barHtml = '<div class="abar" style="height:' . $pct . '%;"></div>';
-            }
+
             // Tooltip-Inhalt: Uhrzeit + Ist + Prognose (was vorhanden ist)
             $parts = [];
             if ($av !== null) {
@@ -855,9 +855,20 @@ class PVForecastSolar extends IPSModuleStrict
             if ($fv !== null) {
                 $parts[] = $this->T('Forecast') . ': ' . number_format($fv, 2) . ' kWh';
             }
-            $tipTxt = sprintf('%02d:00', $h) . ($parts ? ' — ' . implode(' · ', $parts) : '');
-            $tip = htmlspecialchars($tipTxt, ENT_QUOTES);
-            $cols .= '<div class="col"><span class="ctip">' . $tip . '</span>' . $barHtml . '</div>';
+            $tip = htmlspecialchars(sprintf('%02d:00', $h) . ($parts ? ' — ' . implode(' · ', $parts) : ''), ENT_QUOTES);
+            $tipSpan = '<span class="ctip">' . $tip . '</span>';
+
+            // Ist-Balken (Tooltip oben am Balken verankert) – sonst Prognose-Punkt
+            $inner = '';
+            if ($av !== null && $av > 0) {
+                $pct = max(1, (int) round($av / $maxVal * 100));
+                $inner = '<div class="abar" style="height:' . $pct . '%;">' . $tipSpan . '</div>';
+            } elseif ($fv !== null) {
+                $fy = max(0, min(100, (int) round($fv / $maxVal * 100)));
+                $inner = '<div class="fdot" style="bottom:' . $fy . '%;">' . $tipSpan . '</div>';
+            }
+
+            $cols .= '<div class="col">' . $inner . '</div>';
             $xax  .= '<div class="xt">' . ($h % 2 === 0 ? $h . 'h' : '') . '</div>';
         }
 
@@ -996,7 +1007,7 @@ class PVForecastSolar extends IPSModuleStrict
 <div id="{$scope}" style="container-type:inline-size;width:100%;height:100%;">
 <style>
 #{$scope} .card{font-family:'Segoe UI',Tahoma,sans-serif;color:#e9edf3;box-sizing:border-box;
-  font-size:13px;font-size:clamp(10px,3.6cqi,16px);
+  font-size:14px;font-size:clamp(12px,4cqi,19px);
   height:100%;display:flex;flex-direction:column;overflow:hidden;
   padding:0.55em 0.85em;border-radius:0.8em;
   background:linear-gradient(135deg,rgba(20,28,40,0.92),rgba(10,14,22,0.92));}
@@ -1014,7 +1025,7 @@ class PVForecastSolar extends IPSModuleStrict
 #{$scope} .row .cap{display:flex;justify-content:space-between;font-size:0.8em;color:#cfd6e0;margin-bottom:0.12em;}
 #{$scope} .track{background:rgba(255,255,255,0.08);height:0.55em;border-radius:999px;overflow:hidden;}
 #{$scope} .fill{height:100%;background:linear-gradient(90deg,#f7b500,#ff7a00);}
-#{$scope} .htitle{flex:none;font-size:0.8em;color:#cfd6e0;margin:0.45em 0 0.2em;}
+#{$scope} .htitle{flex:none;font-size:0.86em;color:#cfd6e0;margin:0.45em 0 0.2em;}
 #{$scope} .unit{color:#9aa6b3;}
 #{$scope} .leg{font-size:0.92em;margin-left:0.5em;color:#cfd6e0;white-space:nowrap;}
 #{$scope} .leg i{display:inline-block;vertical-align:middle;margin:0 0.25em 0 0.6em;}
@@ -1023,25 +1034,28 @@ class PVForecastSolar extends IPSModuleStrict
 #{$scope} .chartwrap{flex:1 1 0;min-height:4.5em;display:flex;flex-direction:column;
   background:rgba(255,255,255,0.04);border-radius:0.6em;padding:0.7em 0.5em 0.25em;}
 #{$scope} .plot{position:relative;flex:1 1 0;min-height:3.5em;display:flex;align-items:flex-end;
-  gap:2px;margin-left:3.4em;}
-#{$scope} .col{flex:1 1 0;height:100%;display:flex;align-items:flex-end;justify-content:center;}
+  gap:2px;margin-left:3.6em;}
+#{$scope} .col{position:relative;flex:1 1 0;height:100%;display:flex;align-items:flex-end;justify-content:center;}
 #{$scope} .col:hover .abar{filter:brightness(1.25);}
-#{$scope} .abar{width:62%;background:#f7a000;opacity:0.85;border-radius:2px 2px 0 0;}
+#{$scope} .abar{position:relative;width:62%;background:#f7a000;opacity:0.85;border-radius:2px 2px 0 0;}
+#{$scope} .fdot{position:absolute;left:50%;transform:translateX(-50%);width:0.5em;height:0.5em;
+  margin-bottom:-0.25em;border-radius:50%;background:#ffd27a;}
+#{$scope} .col:hover .fdot{transform:translateX(-50%) scale(1.4);}
 #{$scope} .fcline{position:absolute;inset:0;width:100%;height:100%;overflow:visible;pointer-events:none;}
 #{$scope} .fcline polyline{fill:none;stroke:#ffd27a;stroke-width:2;stroke-dasharray:6 4;
   stroke-linejoin:round;stroke-linecap:round;vector-effect:non-scaling-stroke;}
 #{$scope} .gl{position:absolute;left:0;right:0;border-top:1px solid rgba(255,255,255,0.08);pointer-events:none;}
-#{$scope} .gl span{position:absolute;left:-3.4em;top:-0.55em;width:3.2em;text-align:right;
-  font-size:0.6em;color:#9aa6b3;}
+#{$scope} .gl span{position:absolute;left:-3.6em;top:-0.6em;width:3.3em;text-align:right;
+  font-size:0.72em;color:#9aa6b3;}
 #{$scope} .gl0{border-top-color:rgba(255,255,255,0.18);}
 #{$scope} .nowm{position:absolute;top:0;bottom:0;border-left:1px dashed rgba(255,255,255,0.3);pointer-events:none;}
-#{$scope} .ctip{position:absolute;left:0.2em;top:0.1em;white-space:nowrap;
-  background:rgba(8,12,20,0.97);color:#e9edf3;font-size:0.62em;padding:0.2em 0.55em;
-  border-radius:0.35em;border:1px solid rgba(255,255,255,0.14);
+#{$scope} .ctip{position:absolute;bottom:100%;left:50%;transform:translateX(-50%);margin-bottom:3px;
+  white-space:nowrap;background:rgba(8,12,20,0.98);color:#e9edf3;font-size:0.72em;padding:0.25em 0.6em;
+  border-radius:0.35em;border:1px solid rgba(255,255,255,0.18);
   opacity:0;pointer-events:none;transition:opacity .12s;z-index:9;}
 #{$scope} .col:hover .ctip{opacity:1;}
-#{$scope} .xax{flex:none;display:flex;margin-left:3.4em;margin-top:0.15em;}
-#{$scope} .xt{flex:1 1 0;text-align:center;font-size:0.62em;color:#9aa6b3;}
+#{$scope} .xax{flex:none;display:flex;margin-left:3.6em;margin-top:0.15em;}
+#{$scope} .xt{flex:1 1 0;text-align:center;font-size:0.72em;color:#9aa6b3;}
 #{$scope} .hourly{flex:1 1 0;min-height:3.5em;background:rgba(255,255,255,0.04);padding:0.5em;
   border-radius:0.6em;display:flex;align-items:flex-end;gap:0.12em;}
 #{$scope} .hbar{position:relative;flex:1 1 0;min-width:2px;align-self:flex-end;

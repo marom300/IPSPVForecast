@@ -72,10 +72,11 @@ Veröffentlichungsreifes Community-Modul für IP-Symcon (≥ 7.0, PHP 8.x) das v
 | `CalibrationWindowDays` | int | 10 | Tage für Korrekturfaktor-Berechnung |
 | `ActualPowerVariableID` | int | 0 | Variable mit realer PV-Leistung (W) für Overlay-Diagramm |
 
-Buffer (`SetBuffer`):
-- `LastResult` – letztes vollständiges Ergebnis (JSON)
-- `LastRatelimit` – `{limit, remaining, period, ts}`
-- `History` – Ringpuffer der letzten Tagessummen (für Kalibrierung)
+Persistenz – WICHTIG: **Attribute** (überleben Neustart), nicht Buffer (nur RAM)!
+- `LastResult` (Attribute) – letztes vollständiges Ergebnis (JSON), Quelle der Visualisierung
+- `History` (Attribute) – Ringpuffer Prognose/Ist je Tag (für Kalibrierung)
+- `Correction` (Attribute) – aktueller Korrekturfaktor
+- `LastRatelimit` (Buffer, transient) – `{limit, remaining, period, ts}`
 
 ## Erzeugte IPS-Variablen (Idents)
 
