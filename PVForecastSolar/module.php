@@ -836,19 +836,29 @@ class PVForecastSolar extends IPSModuleStrict
             $maxVal = 0.1;
         }
 
-        // Ist-Balken (CSS) + X-Achsenbeschriftung
+        // Ist-Balken (CSS) + X-Achsenbeschriftung + Hover-Tooltip je Stunde
         $cols = '';
         $xax  = '';
         for ($h = $minH; $h <= $maxH; $h++) {
             $av = $actualByHour[$h] ?? null;
+            $fv = $forecastByHour[$h] ?? null;
             $barHtml = '';
             if ($av !== null && $av > 0) {
                 $pct = max(1, (int) round($av / $maxVal * 100));
-                $tip = htmlspecialchars($h . ':00 ' . $this->T('Actual') . ': ' . number_format($av, 2) . ' kWh', ENT_QUOTES);
-                $barHtml = '<div class="abar" title="' . $tip . '" style="height:' . $pct . '%;"></div>';
+                $barHtml = '<div class="abar" style="height:' . $pct . '%;"></div>';
             }
-            $cols .= '<div class="col">' . $barHtml . '</div>';
-            $xax  .= '<div class="xt">' . ($h % 2 === 0 ? $h : '') . '</div>';
+            // Tooltip-Inhalt: Uhrzeit + Ist + Prognose (was vorhanden ist)
+            $parts = [];
+            if ($av !== null) {
+                $parts[] = $this->T('Actual') . ': ' . number_format($av, 2) . ' kWh';
+            }
+            if ($fv !== null) {
+                $parts[] = $this->T('Forecast') . ': ' . number_format($fv, 2) . ' kWh';
+            }
+            $tipTxt = sprintf('%02d:00', $h) . ($parts ? ' — ' . implode(' · ', $parts) : '');
+            $tip = htmlspecialchars($tipTxt, ENT_QUOTES);
+            $cols .= '<div class="col"><span class="ctip">' . $tip . '</span>' . $barHtml . '</div>';
+            $xax  .= '<div class="xt">' . ($h % 2 === 0 ? $h . 'h' : '') . '</div>';
         }
 
         // Prognose-Linie (SVG-Overlay, 0..1000 x 0..100, non-scaling-stroke)
@@ -875,8 +885,8 @@ class PVForecastSolar extends IPSModuleStrict
             $nowMark = '<div class="nowm" style="left:' . round($leftPct, 2) . '%;"></div>';
         }
 
-        // Gridlines + Y-Labels (max / halb / 0)
-        $grid = '<div class="gl" style="top:0;"><span>' . number_format($maxVal, 1) . '</span></div>'
+        // Gridlines + Y-Labels (max mit Einheit / halb / 0)
+        $grid = '<div class="gl" style="top:0;"><span>' . number_format($maxVal, 1) . ' kWh</span></div>'
               . '<div class="gl" style="top:50%;"><span>' . number_format($maxVal / 2, 1) . '</span></div>'
               . '<div class="gl gl0" style="top:100%;"><span>0</span></div>';
 
@@ -967,9 +977,13 @@ class PVForecastSolar extends IPSModuleStrict
         $powerVal  = number_format($power, 0, '.', '');
         $remainVal = number_format($remain, 2, '.', '');
 
-        $rowsHtml = $rowHtml($this->T('Today'),     round($today, 2),    $max)
-                  . $rowHtml($this->T('Tomorrow'),  round($tomorrow, 2), $max)
-                  . $rowHtml($this->T('Day after'), round($dayAfter, 2), $max);
+        // Übermorgen nur zeigen, wenn die API einen Wert liefert (Public-Tier
+        // liefert watt_hours_day nur heute+morgen -> sonst irreführende 0).
+        $rowsHtml = $rowHtml($this->T('Today'),    round($today, 2),    $max)
+                  . $rowHtml($this->T('Tomorrow'), round($tomorrow, 2), $max);
+        if ($dayAfter > 0) {
+            $rowsHtml .= $rowHtml($this->T('Day after'), round($dayAfter, 2), $max);
+        }
 
         // Responsivität:
         //  - Wrapper height:100% + container-type:inline-size -> Karte füllt die
@@ -1009,18 +1023,24 @@ class PVForecastSolar extends IPSModuleStrict
 #{$scope} .chartwrap{flex:1 1 0;min-height:4.5em;display:flex;flex-direction:column;
   background:rgba(255,255,255,0.04);border-radius:0.6em;padding:0.7em 0.5em 0.25em;}
 #{$scope} .plot{position:relative;flex:1 1 0;min-height:3.5em;display:flex;align-items:flex-end;
-  gap:2px;margin-left:2em;}
+  gap:2px;margin-left:3.4em;}
 #{$scope} .col{flex:1 1 0;height:100%;display:flex;align-items:flex-end;justify-content:center;}
+#{$scope} .col:hover .abar{filter:brightness(1.25);}
 #{$scope} .abar{width:62%;background:#f7a000;opacity:0.85;border-radius:2px 2px 0 0;}
 #{$scope} .fcline{position:absolute;inset:0;width:100%;height:100%;overflow:visible;pointer-events:none;}
 #{$scope} .fcline polyline{fill:none;stroke:#ffd27a;stroke-width:2;stroke-dasharray:6 4;
   stroke-linejoin:round;stroke-linecap:round;vector-effect:non-scaling-stroke;}
 #{$scope} .gl{position:absolute;left:0;right:0;border-top:1px solid rgba(255,255,255,0.08);pointer-events:none;}
-#{$scope} .gl span{position:absolute;left:-2em;top:-0.55em;width:1.8em;text-align:right;
-  font-size:0.62em;color:#9aa6b3;}
+#{$scope} .gl span{position:absolute;left:-3.4em;top:-0.55em;width:3.2em;text-align:right;
+  font-size:0.6em;color:#9aa6b3;}
 #{$scope} .gl0{border-top-color:rgba(255,255,255,0.18);}
 #{$scope} .nowm{position:absolute;top:0;bottom:0;border-left:1px dashed rgba(255,255,255,0.3);pointer-events:none;}
-#{$scope} .xax{flex:none;display:flex;margin-left:2em;margin-top:0.15em;}
+#{$scope} .ctip{position:absolute;left:0.2em;top:0.1em;white-space:nowrap;
+  background:rgba(8,12,20,0.97);color:#e9edf3;font-size:0.62em;padding:0.2em 0.55em;
+  border-radius:0.35em;border:1px solid rgba(255,255,255,0.14);
+  opacity:0;pointer-events:none;transition:opacity .12s;z-index:9;}
+#{$scope} .col:hover .ctip{opacity:1;}
+#{$scope} .xax{flex:none;display:flex;margin-left:3.4em;margin-top:0.15em;}
 #{$scope} .xt{flex:1 1 0;text-align:center;font-size:0.62em;color:#9aa6b3;}
 #{$scope} .hourly{flex:1 1 0;min-height:3.5em;background:rgba(255,255,255,0.04);padding:0.5em;
   border-radius:0.6em;display:flex;align-items:flex-end;gap:0.12em;}
