@@ -702,11 +702,40 @@ class PVForecastSolar extends IPSModuleStrict
                 continue;
             }
             $mod = @IPS_GetModule($mid);
-            if (is_array($mod) && ($mod['ModuleName'] ?? '') === 'Location Control') {
-                $cfg = json_decode(IPS_GetConfiguration($iid), true);
-                if (isset($cfg['Latitude'], $cfg['Longitude'])) {
-                    return ['lat' => (float) $cfg['Latitude'], 'lon' => (float) $cfg['Longitude']];
+            $mname = is_array($mod) ? (string) ($mod['ModuleName'] ?? '') : '';
+            // Standortmodul anhand des Namens erkennen (sprach-/versionsunabhängig)
+            if (stripos($mname, 'location') === false && stripos($mname, 'standort') === false) {
+                continue;
+            }
+
+            $cfg = json_decode((string) @IPS_GetConfiguration($iid), true);
+            if (!is_array($cfg)) {
+                continue;
+            }
+
+            $lat = null;
+            $lon = null;
+            // a) getrennte Keys (verschiedene Schreibweisen)
+            foreach (['Latitude', 'latitude', 'Lat', 'lat'] as $k) {
+                if (isset($cfg[$k]) && is_numeric($cfg[$k])) { $lat = (float) $cfg[$k]; break; }
+            }
+            foreach (['Longitude', 'longitude', 'Lng', 'lng', 'Lon', 'lon'] as $k) {
+                if (isset($cfg[$k]) && is_numeric($cfg[$k])) { $lon = (float) $cfg[$k]; break; }
+            }
+            // b) kombiniertes Location-Feld (SelectLocation -> JSON {latitude,longitude})
+            if (($lat === null || $lon === null) && isset($cfg['Location'])) {
+                $locVal = $cfg['Location'];
+                if (is_string($locVal)) {
+                    $locVal = json_decode($locVal, true);
                 }
+                if (is_array($locVal)) {
+                    if (isset($locVal['latitude']))  { $lat = (float) $locVal['latitude']; }
+                    if (isset($locVal['longitude'])) { $lon = (float) $locVal['longitude']; }
+                }
+            }
+
+            if ($lat !== null && $lon !== null && ($lat != 0.0 || $lon != 0.0)) {
+                return ['lat' => $lat, 'lon' => $lon];
             }
         }
         return null;
