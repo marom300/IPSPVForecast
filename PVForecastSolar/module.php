@@ -821,17 +821,15 @@ class PVForecastSolar extends IPSModuleStrict
      */
     private function renderOverlayChart(array $forecastByHour, array $actualByHour): string
     {
-        $hours = array_unique(array_merge(array_keys($forecastByHour), array_keys($actualByHour)));
-        if (empty($hours)) {
+        // Nichts zu zeichnen, wenn weder Ist noch Prognose Daten haben
+        if (empty($forecastByHour) && empty($actualByHour)) {
             return '';
         }
-        sort($hours);
-        $minH = (int) min($hours);
-        $maxH = (int) max($hours);
-        if ($maxH - $minH < 4) {
-            $maxH = min(23, $minH + 4);
-        }
-        $n = $maxH - $minH + 1;
+        // X-Achse immer voller Tag 0–24 Uhr (forecast.solar liefert nur
+        // Tageslicht-Stunden; Nacht = 0 und fehlt in der API).
+        $minH = 0;
+        $maxH = 23;
+        $n = 24;
 
         $allVals = array_merge([0.1], array_values($forecastByHour), array_values($actualByHour));
         $maxVal = ceil(max($allVals) * 10) / 10;
@@ -869,7 +867,21 @@ class PVForecastSolar extends IPSModuleStrict
             }
 
             $cols .= '<div class="col">' . $inner . '</div>';
-            $xax  .= '<div class="xt">' . ($h % 2 === 0 ? $h . 'h' : '') . '</div>';
+        }
+
+        // X-Achse: feste Ticks 0..24 Uhr, prozentual über die Plot-Breite
+        // positioniert (h/24) -> unabhängig von der Spaltenzahl, echte Tageszeit.
+        $xax = '';
+        foreach ([0, 4, 8, 12, 16, 20, 24] as $hh) {
+            $leftPct = $hh / 24 * 100;
+            if ($hh === 0) {
+                $style = 'left:0;';
+            } elseif ($hh === 24) {
+                $style = 'left:100%;transform:translateX(-100%);';
+            } else {
+                $style = 'left:' . $leftPct . '%;transform:translateX(-50%);';
+            }
+            $xax .= '<div class="xt" style="' . $style . '">' . $hh . 'h</div>';
         }
 
         // Prognose-Linie (SVG-Overlay, 0..1000 x 0..100, non-scaling-stroke)
@@ -1054,8 +1066,8 @@ class PVForecastSolar extends IPSModuleStrict
   border-radius:0.35em;border:1px solid rgba(255,255,255,0.18);
   opacity:0;pointer-events:none;transition:opacity .12s;z-index:9;}
 #{$scope} .col:hover .ctip{opacity:1;}
-#{$scope} .xax{flex:none;display:flex;margin-left:3.6em;margin-top:0.15em;}
-#{$scope} .xt{flex:1 1 0;text-align:center;font-size:0.72em;color:#9aa6b3;}
+#{$scope} .xax{flex:none;position:relative;height:1em;margin-left:3.6em;margin-top:0.15em;}
+#{$scope} .xt{position:absolute;top:0;font-size:0.72em;color:#9aa6b3;white-space:nowrap;}
 #{$scope} .hourly{flex:1 1 0;min-height:3.5em;background:rgba(255,255,255,0.04);padding:0.5em;
   border-radius:0.6em;display:flex;align-items:flex-end;gap:0.12em;}
 #{$scope} .hbar{position:relative;flex:1 1 0;min-width:2px;align-self:flex-end;
