@@ -24,6 +24,11 @@
                     "suffix": "° E"
                 },
                 {
+                    "type": "Button",
+                    "caption": "Apply location from IPS",
+                    "onClick": "IPS_RequestAction($id, 'ApplyLocation', true);"
+                },
+                {
                     "type": "Label",
                     "caption": "Tip: forecast.solar derives the time-zone from the coordinates. Negative azimuth means east of south (e.g. -90 = East)."
                 }
@@ -206,6 +211,35 @@
                     "caption": "If set, the visualization shows a chart overlaying today's actual generation (bars) with the forecast (dashed line), like a HomeAssistant chart. Use the instantaneous total PV power in watts (logged). The variable must be archived."
                 }
             ]
+        },
+        {
+            "type": "ExpansionPanel",
+            "caption": "Value & notification (optional)",
+            "expanded": false,
+            "items": [
+                {
+                    "type": "NumberSpinner",
+                    "name": "EnergyPrice",
+                    "caption": "Electricity price (€/kWh)",
+                    "digits": 4,
+                    "minimum": 0,
+                    "maximum": 5,
+                    "suffix": " €/kWh"
+                },
+                {
+                    "type": "Label",
+                    "caption": "If > 0, the forecast is also valued in € (variables and visualization). Use your self-consumption price or feed-in tariff."
+                },
+                {
+                    "type": "SelectScript",
+                    "name": "NotifyScriptID",
+                    "caption": "Daily notification script (optional)"
+                },
+                {
+                    "type": "Label",
+                    "caption": "If set, this script is called once per day with a summary. It receives $_IPS['Message'], $_IPS['Today'], $_IPS['Tomorrow'] and decides the channel (WebFront push, mail, Telegram …)."
+                }
+            ]
         }
     ],
     "actions": [
@@ -223,6 +257,30 @@
             "type": "Button",
             "caption": "Re-render visualization (no API call)",
             "onClick": "IPS_RequestAction($id, 'RefreshVisualization', true);"
+        },
+        {
+            "type": "Label",
+            "caption": " "
+        },
+        {
+            "type": "RowLayout",
+            "items": [
+                {
+                    "type": "Image",
+                    "image": "https://www.paypalobjects.com/digitalassets/c/website/logo/full-text/pp_fc_hl.svg",
+                    "width": "100px",
+                    "height": "40px"
+                },
+                {
+                    "type": "Label",
+                    "caption": "Say thanks and support the module developer:"
+                },
+                {
+                    "type": "Button",
+                    "caption": "paypal.me/marom300",
+                    "onClick": "echo 'https://paypal.me/marom300';"
+                }
+            ]
         }
     ],
     "status": [

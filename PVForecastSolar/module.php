@@ -56,12 +56,18 @@ class PVForecastSolar extends IPSModuleStrict
         // Reale PV-Leistung (W) für das Overlay-Diagramm (Prognose vs. Ist)
         $this->RegisterPropertyInteger('ActualPowerVariableID', 0);
 
+        // €-Bewertung (0 = aus) und optionales Benachrichtigungs-Skript
+        $this->RegisterPropertyFloat('EnergyPrice', 0.0);    // €/kWh
+        $this->RegisterPropertyInteger('NotifyScriptID', 0); // tägliche Zusammenfassung
+
         // Persistente Speicher als ATTRIBUTE (nicht Buffer!): Attribute werden auf
         // Platte gespeichert und überleben IPS-Neustarts/Updates. Buffer sind nur
         // im RAM und gehen bei jedem Neustart verloren -> Cache wäre ständig leer.
         $this->RegisterAttributeString('LastResult', '');   // letztes vollständiges Ergebnis
         $this->RegisterAttributeString('History', '[]');    // Ringpuffer Prognose/Ist je Tag
         $this->RegisterAttributeString('Correction', '1.0'); // aktueller Korrekturfaktor
+        $this->RegisterAttributeString('Accuracy', '0');    // Prognosegüte % (rollend)
+        $this->RegisterAttributeString('LastNotify', '');   // Datum der letzten Benachrichtigung
         // LastRatelimit bleibt bewusst ein Buffer (transient, darf bei Neustart weg sein).
 
         // Timer (Callback: public method UpdateForecast)
@@ -94,6 +100,25 @@ class PVForecastSolar extends IPSModuleStrict
         // (siehe ActualPowerVariableID / renderOverlayChart). Altvariable aufräumen:
         if (@$this->GetIDForIdent('ForecastEnergy')) {
             $this->UnregisterVariable('ForecastEnergy');
+        }
+
+        // €-Wert-Variablen nur wenn ein Strompreis hinterlegt ist
+        if ($this->ReadPropertyFloat('EnergyPrice') > 0) {
+            $this->RegisterVariableFloat('ValueToday',    $this->T('Value today'),    'PVF.Euro', 12);
+            $this->RegisterVariableFloat('ValueTomorrow', $this->T('Value tomorrow'), 'PVF.Euro', 22);
+        } else {
+            foreach (['ValueToday', 'ValueTomorrow'] as $ident) {
+                if (@$this->GetIDForIdent($ident)) {
+                    $this->UnregisterVariable($ident);
+                }
+            }
+        }
+
+        // Prognosegüte-Variable nur wenn eine Ist-Ertragsvariable hinterlegt ist
+        if ($this->ReadPropertyInteger('ActualYieldVariableID') > 0) {
+            $this->RegisterVariableFloat('ForecastAccuracy', $this->T('Forecast accuracy'), 'PVF.Percent', 95);
+        } elseif (@$this->GetIDForIdent('ForecastAccuracy')) {
+            $this->UnregisterVariable('ForecastAccuracy');
         }
 
         // Timer-Intervall
@@ -171,6 +196,9 @@ class PVForecastSolar extends IPSModuleStrict
                 break;
             case 'RefreshVisualization':
                 $this->refreshVisualizationFromCache();
+                break;
+            case 'ApplyLocation':
+                $this->applyLocationFromIPS();
                 break;
             default:
                 throw new Exception("Invalid Ident: $Ident");
@@ -292,9 +320,14 @@ class PVForecastSolar extends IPSModuleStrict
         $totals['Latitude'] = $lat;
         $totals['Longitude'] = $lon;
 
-        // Korrekturfaktor
-        if ($this->ReadPropertyBoolean('CalibrationActive')) {
+        // Historie/Prognosegüte: immer pflegen, wenn eine Ist-Ertragsvariable
+        // hinterlegt ist (auch ohne aktive Kalibrierung -> Güte ist trotzdem nutzbar).
+        if ($this->ReadPropertyInteger('ActualYieldVariableID') > 0) {
             $this->updateCalibration($totals['Today']);
+        }
+
+        // Korrekturfaktor nur ANWENDEN, wenn Kalibrierung aktiv ist
+        if ($this->ReadPropertyBoolean('CalibrationActive')) {
             $factor = (float) $this->ReadAttributeString('Correction');
             if ($factor > 0) {
                 $totals['Today'] *= $factor;
@@ -315,6 +348,9 @@ class PVForecastSolar extends IPSModuleStrict
         $this->setCachedResult($totals);
         $this->renderAndWrite($totals, false);
         $this->setStatusVar(self::STATUS_OK);
+
+        // Optionale tägliche Benachrichtigung (einmal pro Tag)
+        $this->maybeNotify($totals);
     }
 
     // ---------------------------------------------------------------
@@ -548,6 +584,8 @@ class PVForecastSolar extends IPSModuleStrict
 
         $sumA = 0.0;
         $sumF = 0.0;
+        $errSum = 0.0;   // Σ |Ist-Prognose|/Prognose für die Güte (MAPE)
+        $errN = 0;
         foreach ($history as $date => $row) {
             if ($date === $today) {
                 continue;
@@ -557,6 +595,8 @@ class PVForecastSolar extends IPSModuleStrict
             if ($f > 0.1) {
                 $sumA += $a;
                 $sumF += $f;
+                $errSum += abs($a - $f) / $f;
+                $errN++;
             }
         }
         if ($sumF > 0) {
@@ -564,6 +604,15 @@ class PVForecastSolar extends IPSModuleStrict
             $this->WriteAttributeString('Correction', (string) $factor);
             if (@$this->GetIDForIdent('Correction')) {
                 $this->SetValue('Correction', $factor);
+            }
+        }
+
+        // Prognosegüte = 100 % − mittlerer prozentualer Fehler (auf 0..100 geklemmt)
+        if ($errN > 0) {
+            $accuracy = max(0.0, min(100.0, 100.0 * (1.0 - $errSum / $errN)));
+            $this->WriteAttributeString('Accuracy', (string) $accuracy);
+            if (@$this->GetIDForIdent('ForecastAccuracy')) {
+                $this->SetValue('ForecastAccuracy', $accuracy);
             }
         }
     }
@@ -610,6 +659,78 @@ class PVForecastSolar extends IPSModuleStrict
         $this->SetValue('Visualization', $html);
     }
 
+    /**
+     * Ruft – sofern konfiguriert – einmal pro Tag ein Benachrichtigungs-Skript
+     * mit einer Tageszusammenfassung auf. Das Skript entscheidet selbst über den
+     * Kanal (WebFront-Push, Mail, Telegram …). Daten kommen über $_IPS.
+     */
+    private function maybeNotify(array $totals): void
+    {
+        $sid = $this->ReadPropertyInteger('NotifyScriptID');
+        if ($sid <= 0 || !IPS_ScriptExists($sid)) {
+            return;
+        }
+        $today = date('Y-m-d');
+        if ($this->ReadAttributeString('LastNotify') === $today) {
+            return; // heute schon benachrichtigt
+        }
+        $msg = sprintf(
+            $this->T('PV forecast: today %.1f kWh, tomorrow %.1f kWh.'),
+            (float) $totals['Today'], (float) $totals['Tomorrow']
+        );
+        @IPS_RunScriptEx($sid, [
+            'SENDER'     => 'PVForecast',
+            'InstanceID' => $this->InstanceID,
+            'Message'    => $msg,
+            'Today'      => (float) $totals['Today'],
+            'Tomorrow'   => (float) $totals['Tomorrow'],
+        ]);
+        $this->WriteAttributeString('LastNotify', $today);
+    }
+
+    /**
+     * Liest Breiten-/Längengrad aus dem IPS-„Location Control"-Modul (ohne fest
+     * verdrahtete GUID – Identifikation über den Modulnamen). Liefert null, wenn
+     * keine Standort-Instanz existiert.
+     */
+    private function fetchSystemLocation(): ?array
+    {
+        foreach (IPS_GetInstanceList() as $iid) {
+            $inst = @IPS_GetInstance($iid);
+            $mid = $inst['ModuleInfo']['ModuleID'] ?? '';
+            if ($mid === '') {
+                continue;
+            }
+            $mod = @IPS_GetModule($mid);
+            if (is_array($mod) && ($mod['ModuleName'] ?? '') === 'Location Control') {
+                $cfg = json_decode(IPS_GetConfiguration($iid), true);
+                if (isset($cfg['Latitude'], $cfg['Longitude'])) {
+                    return ['lat' => (float) $cfg['Latitude'], 'lon' => (float) $cfg['Longitude']];
+                }
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Button „Standort übernehmen": füllt die Formularfelder mit den Koordinaten
+     * des IPS-Standortmoduls (Speichern via „Übernehmen" durch den Nutzer).
+     */
+    private function applyLocationFromIPS(): void
+    {
+        $loc = $this->fetchSystemLocation();
+        if ($loc === null) {
+            echo $this->T('No IPS location module found.');
+            return;
+        }
+        $this->UpdateFormField('Latitude', 'value', $loc['lat']);
+        $this->UpdateFormField('Longitude', 'value', $loc['lon']);
+        echo sprintf(
+            $this->T('Location applied: %.4f / %.4f. Click "Apply" to save.'),
+            $loc['lat'], $loc['lon']
+        );
+    }
+
     private function writeVariables(array $totals): void
     {
         $this->SetValue('Today',          (float) $totals['Today']);
@@ -618,6 +739,17 @@ class PVForecastSolar extends IPSModuleStrict
         $this->SetValue('PowerNow',       (float) $totals['PowerNow']);
         $this->SetValue('RemainingToday', (float) $totals['RemainingToday']);
         $this->SetValue('LastUpdate',     date('Y-m-d H:i:s'));
+
+        // €-Wert (Prognose × Strompreis)
+        $price = $this->ReadPropertyFloat('EnergyPrice');
+        if ($price > 0) {
+            if (@$this->GetIDForIdent('ValueToday')) {
+                $this->SetValue('ValueToday', (float) $totals['Today'] * $price);
+            }
+            if (@$this->GetIDForIdent('ValueTomorrow')) {
+                $this->SetValue('ValueTomorrow', (float) $totals['Tomorrow'] * $price);
+            }
+        }
 
         // Per-Roof
         if ($this->ReadPropertyBoolean('PerRoofVariables') && isset($totals['PerRoof'])) {
@@ -682,6 +814,17 @@ class PVForecastSolar extends IPSModuleStrict
             IPS_CreateVariableProfile('PVF.Factor', VARIABLETYPE_FLOAT);
             IPS_SetVariableProfileText('PVF.Factor', '', '');
             IPS_SetVariableProfileDigits('PVF.Factor', 3);
+        }
+        if (!IPS_VariableProfileExists('PVF.Euro')) {
+            IPS_CreateVariableProfile('PVF.Euro', VARIABLETYPE_FLOAT);
+            IPS_SetVariableProfileText('PVF.Euro', '', ' €');
+            IPS_SetVariableProfileDigits('PVF.Euro', 2);
+            IPS_SetVariableProfileIcon('PVF.Euro', 'Euro');
+        }
+        if (!IPS_VariableProfileExists('PVF.Percent')) {
+            IPS_CreateVariableProfile('PVF.Percent', VARIABLETYPE_FLOAT);
+            IPS_SetVariableProfileText('PVF.Percent', '', ' %');
+            IPS_SetVariableProfileDigits('PVF.Percent', 0);
         }
         if (!IPS_VariableProfileExists('PVF.Status')) {
             IPS_CreateVariableProfile('PVF.Status', VARIABLETYPE_INTEGER);
@@ -941,13 +1084,22 @@ class PVForecastSolar extends IPSModuleStrict
         $scope = 'pvf-' . $this->InstanceID;
 
         // --- Tagesbalken (HTML, gestylt über .row im <style>-Block) ---
-        $rowHtml = function (string $label, float $kwh, float $max): string {
+        // $euro: optionaler €-Zusatz hinter dem kWh-Wert
+        $rowHtml = function (string $label, float $kwh, float $max, string $euro = ''): string {
             $pct = max(2, (int) round(($kwh / $max) * 100));
             $lbl = htmlspecialchars($label, ENT_QUOTES);
             $val = number_format($kwh, 2, '.', '');
             return '<div class="row"><div class="cap"><span>' . $lbl . '</span>'
-                 . '<span>' . $val . ' kWh</span></div>'
+                 . '<span>' . $val . ' kWh' . $euro . '</span></div>'
                  . '<div class="track"><div class="fill" style="width:' . $pct . '%;"></div></div></div>';
+        };
+
+        // €-Zusatz je Tageswert (nur wenn Strompreis hinterlegt)
+        $price = $this->ReadPropertyFloat('EnergyPrice');
+        $eur = function (float $kwh) use ($price): string {
+            return $price > 0
+                ? ' · <span style="color:#8fd19e;">' . number_format($kwh * $price, 2, ',', '.') . ' €</span>'
+                : '';
         };
 
         // --- Stundenanzeige ---
@@ -993,6 +1145,10 @@ class PVForecastSolar extends IPSModuleStrict
         $corrLine = ($corr !== null)
             ? ' · ' . htmlspecialchars($this->T('Correction'), ENT_QUOTES) . ': ' . number_format($corr, 3)
             : '';
+        $acc = (float) $this->ReadAttributeString('Accuracy');
+        $accLine = ($acc > 0)
+            ? ' · ' . htmlspecialchars($this->T('Quality'), ENT_QUOTES) . ': ' . number_format($acc, 0) . ' %'
+            : '';
 
         $tTitle  = htmlspecialchars($this->T('PV forecast'), ENT_QUOTES);
         $tPower  = htmlspecialchars($this->T('Power now'), ENT_QUOTES);
@@ -1002,10 +1158,10 @@ class PVForecastSolar extends IPSModuleStrict
 
         // Übermorgen nur zeigen, wenn die API einen Wert liefert (Public-Tier
         // liefert watt_hours_day nur heute+morgen -> sonst irreführende 0).
-        $rowsHtml = $rowHtml($this->T('Today'),    round($today, 2),    $max)
-                  . $rowHtml($this->T('Tomorrow'), round($tomorrow, 2), $max);
+        $rowsHtml = $rowHtml($this->T('Today'),    round($today, 2),    $max, $eur($today))
+                  . $rowHtml($this->T('Tomorrow'), round($tomorrow, 2), $max, $eur($tomorrow));
         if ($dayAfter > 0) {
-            $rowsHtml .= $rowHtml($this->T('Day after'), round($dayAfter, 2), $max);
+            $rowsHtml .= $rowHtml($this->T('Day after'), round($dayAfter, 2), $max, $eur($dayAfter));
         }
 
         // Responsivität:
@@ -1082,7 +1238,7 @@ class PVForecastSolar extends IPSModuleStrict
 <div class="card">
   <div class="head">
     <div class="title">☀ {$tTitle}</div>
-    <div class="sub">{$loc} · {$last}{$staleNote}{$corrLine}</div>
+    <div class="sub">{$loc} · {$last}{$staleNote}{$corrLine}{$accLine}</div>
   </div>
   <div class="metrics">
     <div class="metric"><div class="lbl">{$tPower}</div><div class="val">{$powerVal} W</div></div>

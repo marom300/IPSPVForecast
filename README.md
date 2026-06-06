@@ -1,10 +1,16 @@
 # PV-Ertragsprognose (forecast.solar) für IP-Symcon
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+[![IP-Symcon](https://img.shields.io/badge/IP--Symcon-%E2%89%A5%207.0-blue.svg)](https://www.symcon.de)
+[![PayPal](https://img.shields.io/badge/PayPal-Spenden-00457C.svg?logo=paypal)](https://paypal.me/marom300)
+
 > *Deutsche Beschreibung unten · English description further down.*
 
 Ein Community-Modul für **IP-Symcon ≥ 7.0**, das über die kostenlose [forecast.solar](https://forecast.solar)-API eine PV-Ertragsprognose für eine oder mehrere Dachflächen abruft, in IPS-Variablen schreibt und für WebFront/IPSView visualisiert.
 
 ![Module screenshot placeholder](PVForecastSolar/imgs/screenshot.png)
+
+> ☕ **Gefällt dir das Modul?** Wenn es dir Strom (oder Nerven) spart, freue ich mich über eine kleine Spende: **[paypal.me/marom300](https://paypal.me/marom300)** — danke! 🙏
 
 ---
 
@@ -173,6 +179,10 @@ The configuration form warns if the planned load exceeds the limit. The module a
 | `Visualization` | string (~HTMLBox) | HTML for WebFront/IPSView |
 | `Correction` | float | active correction factor (if calibration is on) |
 | `Roof{n}Today/Tomorrow` | float (kWh) | optional per-roof variables |
+
+### Support
+
+If this module saves you some electricity (or nerves), a small donation is much appreciated: **[paypal.me/marom300](https://paypal.me/marom300)** — thank you! 🙏
 
 ### License
 

@@ -71,6 +71,8 @@ Veröffentlichungsreifes Community-Modul für IP-Symcon (≥ 7.0, PHP 8.x) das v
 | `ActualYieldVariableID` | int | 0 | Variable mit realem Tagesertrag (kWh) |
 | `CalibrationWindowDays` | int | 10 | Tage für Korrekturfaktor-Berechnung |
 | `ActualPowerVariableID` | int | 0 | Variable mit realer PV-Leistung (W) für Overlay-Diagramm |
+| `EnergyPrice` | float | 0.0 | Strompreis €/kWh (0 = €-Bewertung aus) |
+| `NotifyScriptID` | int | 0 | optionales Skript für tägliche Zusammenfassung |
 
 Persistenz – WICHTIG: **Attribute** (überleben Neustart), nicht Buffer (nur RAM)!
 - `LastResult` (Attribute) – letztes vollständiges Ergebnis (JSON), Quelle der Visualisierung
@@ -88,8 +90,10 @@ Summen (immer):
 - `RemainingToday` (kWh)
 - `LastUpdate` (String/Unix)
 - `Status` (Int + Profil OK/Error/Ratelimit)
-- `Visualization` (~HTMLBox) – inkl. optionalem Overlay-SVG (Prognose-Linie vs. Ist-Balken), wenn `ActualPowerVariableID` gesetzt
-- `Correction` (Float, optional)
+- `Visualization` (~HTMLBox) – inkl. optionalem Overlay-Chart (Prognose-Linie vs. Ist-Balken), wenn `ActualPowerVariableID` gesetzt
+- `Correction` (Float, optional – wenn Kalibrierung aktiv)
+- `ValueToday` / `ValueTomorrow` (€, optional – wenn `EnergyPrice > 0`)
+- `ForecastAccuracy` (%, optional – wenn `ActualYieldVariableID` gesetzt; rollende Prognosegüte = 100 % − MAPE)
 
 Je Fläche (wenn aktiv): `Roof{Index}Today`, `Roof{Index}Tomorrow`
 
