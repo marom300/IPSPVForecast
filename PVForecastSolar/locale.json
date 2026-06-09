@@ -33,13 +33,9 @@
             "Actual": "Ist",
             "Forecast": "Prognose",
 
-            "Value & notification (optional)": "Bewertung & Benachrichtigung (optional)",
-            "Electricity price (€/kWh)": "Strompreis (€/kWh)",
-            "If > 0, the forecast is also valued in € (variables and visualization). Use your self-consumption price or feed-in tariff.": "Wenn > 0, wird die Prognose auch in € bewertet (Variablen und Visualisierung). Verwende deinen Eigenverbrauchspreis oder die Einspeisevergütung.",
+            "Notification (optional)": "Benachrichtigung (optional)",
             "Daily notification script (optional)": "Tägliches Benachrichtigungs-Skript (optional)",
             "If set, this script is called once per day with a summary. It receives $_IPS['Message'], $_IPS['Today'], $_IPS['Tomorrow'] and decides the channel (WebFront push, mail, Telegram …).": "Wenn gesetzt, wird dieses Skript einmal täglich mit einer Zusammenfassung aufgerufen. Es erhält $_IPS['Message'], $_IPS['Today'], $_IPS['Tomorrow'] und entscheidet selbst über den Kanal (WebFront-Push, Mail, Telegram …).",
-            "Value today": "Wert heute",
-            "Value tomorrow": "Wert morgen",
             "Forecast accuracy": "Prognosegüte",
             "Quality": "Güte",
             "PV forecast: today %.1f kWh, tomorrow %.1f kWh.": "PV-Prognose: heute %.1f kWh, morgen %.1f kWh.",
@@ -48,7 +44,7 @@
             "Enable self-calibration": "Selbstkalibrierung aktivieren",
             "Actual daily yield variable (kWh)": "Variable mit realem Tagesertrag (kWh)",
             "Window (days)": "Zeitfenster (Tage)",
-            "Correction factor is constrained to 0.5 … 1.5. Applied to today, tomorrow and day-after forecasts.": "Der Korrekturfaktor ist auf 0,5 … 1,5 begrenzt und wird auf die Prognosen für heute, morgen und übermorgen angewandt.",
+            "Correction factor is constrained to 0.5 … 2.0. Applied to today, tomorrow and day-after forecasts.": "Der Korrekturfaktor ist auf 0,5 … 2,0 begrenzt und wird auf die Prognosen für heute, morgen und übermorgen angewandt.",
 
             "Update now": "Jetzt aktualisieren",
             "Test connection": "Verbindung testen",

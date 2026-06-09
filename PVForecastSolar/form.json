@@ -192,7 +192,7 @@
                 },
                 {
                     "type": "Label",
-                    "caption": "Correction factor is constrained to 0.5 … 1.5. Applied to today, tomorrow and day-after forecasts."
+                    "caption": "Correction factor is constrained to 0.5 … 2.0. Applied to today, tomorrow and day-after forecasts."
                 }
             ]
         },
@@ -214,22 +214,9 @@
         },
         {
             "type": "ExpansionPanel",
-            "caption": "Value & notification (optional)",
+            "caption": "Notification (optional)",
             "expanded": false,
             "items": [
-                {
-                    "type": "NumberSpinner",
-                    "name": "EnergyPrice",
-                    "caption": "Electricity price (€/kWh)",
-                    "digits": 4,
-                    "minimum": 0,
-                    "maximum": 5,
-                    "suffix": " €/kWh"
-                },
-                {
-                    "type": "Label",
-                    "caption": "If > 0, the forecast is also valued in € (variables and visualization). Use your self-consumption price or feed-in tariff."
-                },
                 {
                     "type": "SelectScript",
                     "name": "NotifyScriptID",

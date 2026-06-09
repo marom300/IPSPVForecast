@@ -22,7 +22,7 @@ Ein Community-Modul für **IP-Symcon ≥ 7.0**, das über die kostenlose [foreca
 - Pro Fläche ein HTTP-Request, anschließend automatische Summenbildung
 - Geloggte Variablen für **Prognose heute / morgen / übermorgen**, erwartete Leistung jetzt, Resttagesertrag, Status, letzter Abruf
 - Optional **Variablen je Fläche**
-- Optionale **Selbstkalibrierung**: Korrekturfaktor aus realem Ist-Ertrag vs. Prognose der letzten N Tage (begrenzt auf 0,5 – 1,5)
+- Optionale **Selbstkalibrierung**: Korrekturfaktor aus realem Ist-Ertrag vs. Prognose der letzten N Tage (begrenzt auf 0,5 – 2,0)
 - **HTML-Visualisierung** (`~HTMLBox`) – dunkles Theme, responsiv, IPSView- und WebFront-tauglich
 - Vollständige Auswertung des **Rate-Limits** der Public-API (≈ 12 Anfragen/Stunde/IP)
 - Robuste Fehlerbehandlung: bei API-/Netzwerkfehlern bleiben die zuletzt gültigen Werte erhalten
@@ -64,7 +64,7 @@ Liste mit beliebig vielen Einträgen, je Zeile:
 
 #### Selbstkalibrierung (optional)
 - **Aktivieren** + **Variable mit realem Tagesertrag (kWh)** auswählen (z. B. die Ist-Energievariable Ihres Wechselrichters).
-- **Zeitfenster (Tage)** – Default 10. Modul berechnet `Σ Ist / Σ Prognose` der letzten abgeschlossenen Tage, plausibilisiert auf 0,5 – 1,5 und wendet den Faktor auf zukünftige Prognosen an.
+- **Zeitfenster (Tage)** – Default 10. Modul berechnet `Σ Ist / Σ Prognose` der letzten abgeschlossenen Tage, plausibilisiert auf 0,5 – 2,0 und wendet den Faktor auf zukünftige Prognosen an.
 
 ### Beispielkonfiguration (Mehrflächen-Anlage)
 
